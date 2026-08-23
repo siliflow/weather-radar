@@ -124,11 +124,76 @@ async function loadRadarLayer() {
       swLat: 32.0, swLng: 121.0,
       neLat: 43.2, neLng: 133.0,
     };
-    createGroundOverlay(httpsUrl, bounds);
+
+    const processedUrl = await processRadarImage(httpsUrl);
+    if (!processedUrl) {
+      statusNote.textContent += " (원본 이미지 — 자동 가공 실패, 콘솔 확인)";
+    }
+    createGroundOverlay(processedUrl || httpsUrl, bounds);
   } catch (err) {
     console.error(err);
     statusNote.textContent = "레이더 API 호출 실패 (콘솔 확인).";
   }
+}
+
+// ---------------------------------------------------------------
+// 레이더 이미지에서 회색 배경/테두리선/오른쪽 범례를 투명 처리해서
+// 강수 부분(채도 있는 색)만 남기는 가공 함수.
+// CORS 정책 때문에 픽셀 읽기가 막히면 null을 반환 (그 경우 원본 그대로 사용).
+// ---------------------------------------------------------------
+function processRadarImage(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0);
+
+        // 오른쪽 색상 범례 영역(대략 전체 폭의 6%)은 통째로 제거
+        const legendWidth = Math.round(canvas.width * 0.06);
+
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const data = imageData.data;
+
+        for (let y = 0; y < canvas.height; y++) {
+          for (let x = 0; x < canvas.width; x++) {
+            const i = (y * canvas.width + x) * 4;
+
+            if (x >= canvas.width - legendWidth) {
+              data[i + 3] = 0;
+              continue;
+            }
+
+            const r = data[i], g = data[i + 1], b = data[i + 2];
+            const max = Math.max(r, g, b), min = Math.min(r, g, b);
+            const lightness = (max + min) / 2;
+            const saturation =
+              max === min ? 0 : (max - min) / (255 - Math.abs(2 * lightness - 255));
+
+            // 채도가 낮은(회색 계열) 픽셀 = 배경/테두리선/마스크 → 투명 처리
+            // 너무 밝거나(흰 배경) 너무 어두운(검은 테두리선) 픽셀도 함께 제거
+            if (saturation < 0.15 || lightness > 235 || lightness < 20) {
+              data[i + 3] = 0;
+            }
+          }
+        }
+
+        ctx.putImageData(imageData, 0, 0);
+        resolve(canvas.toDataURL("image/png"));
+      } catch (err) {
+        console.warn("레이더 이미지 가공 실패 (CORS 제한 가능성):", err);
+        resolve(null);
+      }
+    };
+
+    img.onerror = () => resolve(null);
+    img.src = url;
+  });
 }
 
 // ---------------------------------------------------------------

@@ -120,11 +120,13 @@ function tileXYToLonLat(x, y, z) {
 }
 
 function clearRadarTiles() {
-  radarTileEls.forEach(({ el }) => el.remove());
+  radarTileEls.forEach((overlay) => overlay.setMap(null));
   radarTileEls = [];
 }
 
-// 현재 지도 화면 범위에 필요한 타일들을 계산해서 새로 그림
+// 현재 지도 화면 범위에 필요한 타일들을 계산해서 새로 그림.
+// 각 타일은 kakao.maps.CustomOverlay로 붙여서, 드래그/이동 시 카카오맵이
+// 알아서 위치를 따라 옮겨주도록 함 (우리가 직접 픽셀 좌표를 계산할 필요 없음).
 function renderRadarTiles() {
   if (!map || currentLayer !== "precip" || !radarFrame) return;
   clearRadarTiles();
@@ -136,9 +138,8 @@ function renderRadarTiles() {
   const lngSpan = ne.getLng() - sw.getLng();
   if (lngSpan <= 0) return;
 
-  // 화면 폭(px)과 경도 범위를 이용해 화면 해상도에 맞는 타일 줌 레벨을 역산
   let z = Math.round(Math.log2((mapEl.clientWidth * 360) / (256 * lngSpan)));
-  z = Math.max(2, Math.min(z, 7)); // RainViewer 타일 서버가 지원하는 범위로 더 보수적으로 제한
+  z = Math.max(2, Math.min(z, 7));
 
   const topLeft = lonLatToTileXY(sw.getLng(), ne.getLat(), z);
   const bottomRight = lonLatToTileXY(ne.getLng(), sw.getLat(), z);
@@ -148,66 +149,53 @@ function renderRadarTiles() {
   const yStart = Math.floor(topLeft.y);
   const yEnd = Math.floor(bottomRight.y);
 
-  // 안전장치: 화면이 너무 넓게 잡혀 타일이 폭주하면 이번 렌더는 건너뜀
   const MAX_TILES_PER_AXIS = 14;
   if (xEnd - xStart + 1 > MAX_TILES_PER_AXIS || yEnd - yStart + 1 > MAX_TILES_PER_AXIS) return;
+
+  const proj = map.getProjection();
 
   for (let tx = xStart; tx <= xEnd; tx++) {
     for (let ty = yStart; ty <= yEnd; ty++) {
       const nw = tileXYToLonLat(tx, ty, z);
       const se = tileXYToLonLat(tx + 1, ty + 1, z);
 
-      const img = document.createElement("img");
-      // 색상 스킴 2 = 흔히 쓰이는 파랑~빨강 강수 팔레트, 1_1 = 스무딩 + 눈 표시 켬
-      img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tx}/${ty}/2/1_1.png`;
-      img.style.position = "absolute";
-      img.style.pointerEvents = "none";
-      img.style.zIndex = "10";
-      img.style.opacity = "0.75";
-      img.onerror = () => { img.style.display = "none"; };
-      mapEl.appendChild(img);
+      // 현재 화면 배율에서 이 타일이 몇 픽셀 크기인지 계산 (오버레이 이미지 크기용)
+      const p1 = proj.pointFromCoords(new kakao.maps.LatLng(nw.lat, nw.lon));
+      const p2 = proj.pointFromCoords(new kakao.maps.LatLng(se.lat, se.lon));
+      const width = Math.abs(p2.x - p1.x);
+      const height = Math.abs(p2.y - p1.y);
+      if (width < 1 || height < 1) continue;
 
-      radarTileEls.push({ el: img, nw, se });
+      const img = document.createElement("img");
+      img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tx}/${ty}/2/1_1.png`;
+      img.style.width = `${width}px`;
+      img.style.height = `${height}px`;
+      img.style.display = "block";
+      img.style.opacity = "0.75";
+      img.style.pointerEvents = "none";
+      img.onerror = () => { img.style.display = "none"; };
+
+      const overlay = new kakao.maps.CustomOverlay({
+        position: new kakao.maps.LatLng(nw.lat, nw.lon),
+        content: img,
+        xAnchor: 0,
+        yAnchor: 0,
+        zIndex: 10,
+      });
+      overlay.setMap(map);
+      radarTileEls.push(overlay);
     }
   }
-
-  positionRadarTiles();
-}
-
-function positionRadarTiles() {
-  if (!map) return;
-  const proj = map.getProjection();
-
-  radarTileEls.forEach(({ el, nw, se }) => {
-    const p1 = proj.pointFromCoords(new kakao.maps.LatLng(nw.lat, nw.lon));
-    const p2 = proj.pointFromCoords(new kakao.maps.LatLng(se.lat, se.lon));
-
-    const left = Math.min(p1.x, p2.x);
-    const top = Math.min(p1.y, p2.y);
-    const width = Math.abs(p2.x - p1.x);
-    const height = Math.abs(p2.y - p1.y);
-
-    Object.assign(el.style, {
-      left: `${left}px`,
-      top: `${top}px`,
-      width: `${width}px`,
-      height: `${height}px`,
-    });
-  });
 }
 
 function setupRadarTileSync() {
-  // 이동/확대가 시작되면 레이더를 잠깐 숨기고(어긋난 채로 붙어있는 것 방지),
-  // 움직임이 끝나면(idle) 새 화면 범위에 맞는 타일을 다시 그림.
-  const hideTiles = () => {
-    radarTileEls.forEach(({ el }) => (el.style.visibility = "hidden"));
-  };
   const rerender = () => {
     if (currentLayer === "precip") renderRadarTiles();
   };
 
-  kakao.maps.event.addListener(map, "dragstart", hideTiles);
-  kakao.maps.event.addListener(map, "zoom_start", hideTiles);
+  // CustomOverlay는 드래그(이동) 중엔 카카오맵이 알아서 위치를 따라 옮겨주므로
+  // 별도 처리가 필요 없음. 확대/축소로 필요한 타일 구성이 달라질 때만 다시 그림.
+  kakao.maps.event.addListener(map, "zoom_start", clearRadarTiles);
   kakao.maps.event.addListener(map, "idle", rerender);
 
   window.addEventListener("resize", () => {

@@ -7,5 +7,5 @@ const CONFIG = {
   KAKAO_JS_KEY: "c5149959d512ef61523d9b35f4589377",
 
   // apihub.kma.go.kr 에서 발급받은 인증키 (공공데이터포털 키와 다름 — 별도 신청 필요)
-  KMA_AUTH_KEY: "YOUR_KMA_APIHUB_AUTH_KEY",
+  KMA_AUTH_KEY: "sg7dDoDESiOO3Q6AxIojzw",
 };

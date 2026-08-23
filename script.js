@@ -208,6 +208,7 @@ function setupRadarTileSync() {
 
   kakao.maps.event.addListener(map, "center_changed", reposition);
   kakao.maps.event.addListener(map, "zoom_changed", reposition);
+  kakao.maps.event.addListener(map, "drag", reposition);
   kakao.maps.event.addListener(map, "idle", rerender);
 
   window.addEventListener("resize", () => {

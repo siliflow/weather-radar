@@ -197,18 +197,17 @@ function positionRadarTiles() {
 }
 
 function setupRadarTileSync() {
-  // 드래그/확대 중에는 기존 타일 위치만 실시간으로 따라 움직이고,
-  // 움직임이 끝나면(idle) 화면 범위에 맞는 새 타일을 다시 불러옴.
-  const reposition = () => {
-    if (currentLayer === "precip") positionRadarTiles();
+  // 이동/확대가 시작되면 레이더를 잠깐 숨기고(어긋난 채로 붙어있는 것 방지),
+  // 움직임이 끝나면(idle) 새 화면 범위에 맞는 타일을 다시 그림.
+  const hideTiles = () => {
+    radarTileEls.forEach(({ el }) => (el.style.visibility = "hidden"));
   };
   const rerender = () => {
     if (currentLayer === "precip") renderRadarTiles();
   };
 
-  kakao.maps.event.addListener(map, "center_changed", reposition);
-  kakao.maps.event.addListener(map, "zoom_changed", reposition);
-  kakao.maps.event.addListener(map, "drag", reposition);
+  kakao.maps.event.addListener(map, "dragstart", hideTiles);
+  kakao.maps.event.addListener(map, "zoom_start", hideTiles);
   kakao.maps.event.addListener(map, "idle", rerender);
 
   window.addEventListener("resize", () => {

@@ -138,7 +138,7 @@ function renderRadarTiles() {
 
   // 화면 폭(px)과 경도 범위를 이용해 화면 해상도에 맞는 타일 줌 레벨을 역산
   let z = Math.round(Math.log2((mapEl.clientWidth * 360) / (256 * lngSpan)));
-  z = Math.max(2, Math.min(z, 8)); // RainViewer 타일이 지원하는 합리적 범위로 제한
+  z = Math.max(2, Math.min(z, 7)); // RainViewer 타일 서버가 지원하는 범위로 더 보수적으로 제한
 
   const topLeft = lonLatToTileXY(sw.getLng(), ne.getLat(), z);
   const bottomRight = lonLatToTileXY(ne.getLng(), sw.getLat(), z);
@@ -164,6 +164,7 @@ function renderRadarTiles() {
       img.style.pointerEvents = "none";
       img.style.zIndex = "10";
       img.style.opacity = "0.75";
+      img.onerror = () => { img.style.display = "none"; };
       mapEl.appendChild(img);
 
       radarTileEls.push({ el: img, nw, se });

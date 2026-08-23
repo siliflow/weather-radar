@@ -73,36 +73,58 @@ function switchLayer(layer) {
 // ---------------------------------------------------------------
 // 강수량(레이더) 레이어 — 기상청 API허브 레이더 합성영상
 // ---------------------------------------------------------------
-function getLatestRadarTimeString() {
-  // 레이더는 5분 주기 생산. 여유를 두고 10분 전 시각을 사용.
-  const now = new Date(Date.now() - 10 * 60 * 1000);
+function getTodayString() {
+  const now = new Date();
   const pad = (n) => String(n).padStart(2, "0");
-  const y = now.getFullYear();
-  const m = pad(now.getMonth() + 1);
-  const d = pad(now.getDate());
-  const hh = pad(now.getHours());
-  const mm = pad(Math.floor(now.getMinutes() / 5) * 5);
-  return { str: `${y}${m}${d}${hh}${mm}`, display: `${y}-${m}-${d} ${hh}:${mm}` };
+  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
 }
 
-function loadRadarLayer() {
-  const { str, display } = getLatestRadarTimeString();
-  document.getElementById("status-note").textContent = `관측시각 ${display} (KST, 근사치)`;
+async function loadRadarLayer() {
+  const statusNote = document.getElementById("status-note");
+  statusNote.textContent = "레이더 목록 불러오는 중...";
 
-  // 기상청 API허브 레이더 합성 이미지 URL
-  // cmp=HSR: 강수량, qcd=MSK: 품질보정, disp=A: 자동
-  const radarUrl =
-    `https://apihub.kma.go.kr/api/typ01/cgi-bin/url/nph-rdr_cmp1_api` +
-    `?tm=${str}&cmp=HSR&qcd=MSK&obs=ECHO&map=HB&disp=A&authKey=${CONFIG.KMA_AUTH_KEY}`;
+  const today = getTodayString();
+  const apiUrl =
+    `https://apis.data.go.kr/1360000/RadarImgInfoService/getCmpImg` +
+    `?serviceKey=${CONFIG.DATA_GO_KR_KEY}` +
+    `&pageNo=1&numOfRows=50&dataType=XML&data=CMP_WRC&time=${today}`;
 
-  // 레이더 합성영상의 대략적인 위경도 범위 (한반도 전역, 근사값)
-  // 정확한 투영법(LCC)이 아닌 사각형 근사이므로 가장자리는 오차가 있습니다.
-  const bounds = {
-    swLat: 32.0, swLng: 121.0,
-    neLat: 43.2, neLng: 133.0,
-  };
+  try {
+    const res = await fetch(apiUrl);
+    const text = await res.text();
 
-  createGroundOverlay(radarUrl, bounds);
+    // ---- 디버그: 실제 응답 구조를 콘솔에서 확인하기 위한 임시 로그 ----
+    console.log("[레이더 API 원본 응답]", text);
+
+    const xml = new DOMParser().parseFromString(text, "text/xml");
+    const errorNode = xml.querySelector("cmmMsgHeader, returnAuthMsg");
+    if (errorNode) {
+      statusNote.textContent = "API 오류: 콘솔(F12)을 확인해주세요.";
+      return;
+    }
+
+    const items = Array.from(xml.querySelectorAll("item"));
+    if (items.length === 0) {
+      statusNote.textContent = "레이더 목록이 비어있습니다. 콘솔(F12)에서 원본 응답을 확인해주세요.";
+      return;
+    }
+
+    // item 안의 자식 태그 이름을 모르므로, 첫 번째 item의 모든 자식을 콘솔에 출력
+    console.log("[첫 item의 필드들]", items[0].children.length
+      ? Array.from(items[0].children).map((c) => `${c.tagName}=${c.textContent}`)
+      : items[0].textContent);
+
+    statusNote.textContent = `${items.length}개 항목 수신 — 콘솔(F12)에서 구조 확인 필요`;
+
+    // TODO: 실제 필드명을 콘솔에서 확인한 뒤, 아래 두 줄을 맞는 필드명으로 교체
+    // const latest = items[items.length - 1];
+    // const imgUrl = latest.querySelector("실제필드명").textContent;
+    // const bounds = { swLat: 32.0, swLng: 121.0, neLat: 43.2, neLng: 133.0 };
+    // createGroundOverlay(imgUrl, bounds);
+  } catch (err) {
+    console.error(err);
+    statusNote.textContent = "레이더 API 호출 실패 (콘솔 확인). CORS 문제일 수 있음.";
+  }
 }
 
 // ---------------------------------------------------------------

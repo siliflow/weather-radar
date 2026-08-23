@@ -17,18 +17,11 @@ let currentLayer = "precip";
 function initMap() {
   const container = document.getElementById("map");
   
-  // 1. 지도 기본 생성 (기상 타일 고정을 위해 드래그/줌 비활성화 옵션 적용)
+  // 지도 조작 기능(드래그, 확대/축소) 정상 활성화
   map = new kakao.maps.Map(container, {
     center: new kakao.maps.LatLng(36.5, 127.8), // 대한민국 중심
     level: 10,
-    draggable: false,       // 마우스 드래그 이동 금지 (위치 고정)
-    scrollwheel: false,     // 마우스 휠 줌 금지
-    disableDoubleClickZoom: true // 더블 클릭 줌 금지
   });
-
-  // 이벤트 컨트롤 완전히 차단 (상위 조작 방지)
-  map.setZoomable(false);
-  map.setDraggable(false);
 
   setupLayerButtons();
   setupRadarTileSync();
@@ -142,14 +135,14 @@ function renderRadarTiles() {
   let z = Math.round(Math.log2((mapEl.clientWidth * 360) / (256 * lngSpan)));
   z = Math.max(2, Math.min(z, 7));
 
-  // 화면 여백 없이 타일이 전체를 채우도록 경계 영역 계산 범위를 확장 (+1/-1 타일 넉넉하게 계산)
+  // 화면 여백(빈 곳)이 생기지 않도록 상하좌우로 2개 타일씩 더 넓게 미리 불러옴
   const topLeft = lonLatToTileXY(sw.getLng(), ne.getLat(), z);
   const bottomRight = lonLatToTileXY(ne.getLng(), sw.getLat(), z);
 
-  const xStart = Math.floor(topLeft.x) - 1;
-  const xEnd = Math.floor(bottomRight.x) + 1;
-  const yStart = Math.floor(topLeft.y) - 1;
-  const yEnd = Math.floor(bottomRight.y) + 1;
+  const xStart = Math.floor(topLeft.x) - 2;
+  const xEnd = Math.floor(bottomRight.x) + 2;
+  const yStart = Math.floor(topLeft.y) - 2;
+  const yEnd = Math.floor(bottomRight.y) + 2;
 
   const proj = map.getProjection();
 
@@ -166,13 +159,13 @@ function renderRadarTiles() {
 
       const img = document.createElement("img");
       img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tx}/${ty}/2/1_1.png`;
-      img.style.width = `${width + 1}px`;  // 타일 경계 틈새 핏 방지 (+1px 오버랩)
-      img.style.height = `${height + 1}px`;
+      img.style.width = `${width + 1.5}px`;  // 타일 사이의 미세 선(실금) 안 생기게 살짝 오버랩
+      img.style.height = `${height + 1.5}px`;
       img.style.display = "block";
       img.style.opacity = "0.85";
       img.style.pointerEvents = "none";
       
-      // 2. 구름 간 빈 공간 채우기: CSS Blur & Soft Edge 처리
+      // 구름 입자 사이의 구멍 및 빈 공간을 자연스럽게 메워주는 CSS 필터
       img.style.filter = "blur(1.5px) contrast(120%)";
       img.onerror = () => { img.style.display = "none"; };
 
@@ -194,7 +187,10 @@ function setupRadarTileSync() {
     if (currentLayer === "precip") renderRadarTiles();
   };
 
-  // 리사이즈 시 화면 전체 재정렬 및 다시 그리기
+  // 지도 드래그 및 확대/축소가 끝났을 때(idle) 타일을 자연스럽게 다시 렌더링
+  kakao.maps.event.addListener(map, "zoom_start", clearRadarTiles);
+  kakao.maps.event.addListener(map, "idle", rerender);
+
   window.addEventListener("resize", () => {
     map.relayout();
     rerender();

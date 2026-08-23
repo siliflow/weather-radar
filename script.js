@@ -13,7 +13,6 @@ function loadKakaoSDK() {
 
 let map;
 let currentLayer = "precip";
-let radarOverlayEl = null; // 강수량(레이더) 이미지 오버레이 DOM
 
 function initMap() {
   const container = document.getElementById("map");
@@ -23,7 +22,7 @@ function initMap() {
   });
 
   setupLayerButtons();
-  setupGroundOverlaySync();
+  setupRadarTileSync();
   switchLayer("precip");
 }
 
@@ -42,7 +41,7 @@ function setupLayerButtons() {
 
 function switchLayer(layer) {
   currentLayer = layer;
-  clearRadarOverlay();
+  clearRadarTiles();
 
   const statusTitle = document.getElementById("status-title");
   const statusValue = document.getElementById("status-value");
@@ -50,7 +49,7 @@ function switchLayer(layer) {
 
   if (layer === "precip") {
     statusTitle.textContent = "강수량 (레이더)";
-    statusValue.textContent = "기상청 레이더 합성영상";
+    statusValue.textContent = "RainViewer 실시간 강수 레이더";
     loadRadarLayer();
   } else if (layer === "temp") {
     statusTitle.textContent = "기온";
@@ -71,188 +70,138 @@ function switchLayer(layer) {
 }
 
 // ---------------------------------------------------------------
-// 강수량(레이더) 레이어 — 기상청 API허브 레이더 합성영상
+// 강수량(레이더) 레이어 — RainViewer 타일 오버레이
+// (배경/범례 없는 투명 PNG 타일이라 애플 날씨 앱과 비슷한 느낌을 줌)
 // ---------------------------------------------------------------
-function getTodayString() {
-  const now = new Date();
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
-}
+let radarFrame = null;      // { host, path } — RainViewer 최신 프레임 정보
+let radarTileEls = [];      // 현재 지도 위에 붙어있는 타일 <img> 요소들
 
 async function loadRadarLayer() {
   const statusNote = document.getElementById("status-note");
-  statusNote.textContent = "레이더 이미지 불러오는 중...";
-
-  const today = getTodayString();
-  const apiUrl =
-    `https://apis.data.go.kr/1360000/RadarImgInfoService/getCmpImg` +
-    `?serviceKey=${CONFIG.DATA_GO_KR_KEY}` +
-    `&pageNo=1&numOfRows=50&dataType=XML&data=CMP_WRC&time=${today}`;
+  statusNote.textContent = "레이더 불러오는 중...";
 
   try {
-    const res = await fetch(apiUrl);
-    const text = await res.text();
-    const xml = new DOMParser().parseFromString(text, "text/xml");
-
-    const resultCode = xml.querySelector("resultCode")?.textContent;
-    if (resultCode && resultCode !== "00") {
-      const msg = xml.querySelector("resultMsg")?.textContent || "알 수 없는 오류";
-      statusNote.textContent = `API 오류: ${msg}`;
-      return;
+    if (!radarFrame) {
+      const res = await fetch("https://api.rainviewer.com/public/weather-maps.json");
+      const json = await res.json();
+      const past = json.radar.past;
+      const latest = past[past.length - 1];
+      radarFrame = { host: json.host, path: latest.path, time: latest.time };
     }
 
-    // 하나의 <item> 안에 <rdr-img-file> 태그가 시간순으로 여러 개 들어있음.
-    // 가장 마지막 것이 최신 이미지.
-    const fileNodes = xml.querySelectorAll("rdr-img-file");
-    if (fileNodes.length === 0) {
-      statusNote.textContent = "레이더 이미지 목록이 비어있습니다.";
-      return;
-    }
+    const t = new Date(radarFrame.time * 1000);
+    const pad = (n) => String(n).padStart(2, "0");
+    statusNote.textContent =
+      `관측시각 ${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ` +
+      `${pad(t.getHours())}:${pad(t.getMinutes())} (RainViewer 기준)`;
 
-    const latestUrl = fileNodes[fileNodes.length - 1].textContent.trim();
-    const httpsUrl = latestUrl.replace(/^http:\/\//, "https://");
-
-    // 파일명 끝의 yyyyMMddHHmm 부분에서 관측시각 표시
-    const m = httpsUrl.match(/(\d{8})(\d{4})\.png$/);
-    if (m) {
-      const [, ymd, hm] = m;
-      statusNote.textContent =
-        `관측시각 ${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)} ${hm.slice(0, 2)}:${hm.slice(2, 4)} (KST)`;
-    }
-
-    const bounds = {
-      swLat: 32.0, swLng: 121.0,
-      neLat: 43.2, neLng: 133.0,
-    };
-
-    const processedUrl = await processRadarImage(httpsUrl);
-    if (!processedUrl) {
-      statusNote.textContent += " (원본 이미지 — 자동 가공 실패, 콘솔 확인)";
-    }
-    createGroundOverlay(processedUrl || httpsUrl, bounds);
+    renderRadarTiles();
   } catch (err) {
     console.error(err);
-    statusNote.textContent = "레이더 API 호출 실패 (콘솔 확인).";
+    statusNote.textContent = "레이더 불러오기 실패 (콘솔 확인).";
   }
 }
 
-// ---------------------------------------------------------------
-// 레이더 이미지에서 회색 배경/테두리선/오른쪽 범례를 투명 처리해서
-// 강수 부분(채도 있는 색)만 남기는 가공 함수.
-// CORS 정책 때문에 픽셀 읽기가 막히면 null을 반환 (그 경우 원본 그대로 사용).
-// ---------------------------------------------------------------
-function processRadarImage(url) {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-
-    img.onload = () => {
-      try {
-        const canvas = document.createElement("canvas");
-        canvas.width = img.naturalWidth;
-        canvas.height = img.naturalHeight;
-        const ctx = canvas.getContext("2d");
-        ctx.drawImage(img, 0, 0);
-
-        // 오른쪽 색상 범례 영역(대략 전체 폭의 6%)은 통째로 제거
-        const legendWidth = Math.round(canvas.width * 0.06);
-
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        const data = imageData.data;
-
-        for (let y = 0; y < canvas.height; y++) {
-          for (let x = 0; x < canvas.width; x++) {
-            const i = (y * canvas.width + x) * 4;
-
-            if (x >= canvas.width - legendWidth) {
-              data[i + 3] = 0;
-              continue;
-            }
-
-            const r = data[i], g = data[i + 1], b = data[i + 2];
-            const max = Math.max(r, g, b), min = Math.min(r, g, b);
-            const lightness = (max + min) / 2;
-            const saturation =
-              max === min ? 0 : (max - min) / (255 - Math.abs(2 * lightness - 255));
-
-            // 채도가 낮은(회색 계열) 픽셀 = 배경/테두리선/마스크 → 투명 처리
-            // 너무 밝거나(흰 배경) 너무 어두운(검은 테두리선) 픽셀도 함께 제거
-            if (saturation < 0.15 || lightness > 235 || lightness < 20) {
-              data[i + 3] = 0;
-            }
-          }
-        }
-
-        ctx.putImageData(imageData, 0, 0);
-        resolve(canvas.toDataURL("image/png"));
-      } catch (err) {
-        console.warn("레이더 이미지 가공 실패 (CORS 제한 가능성):", err);
-        resolve(null);
-      }
-    };
-
-    img.onerror = () => resolve(null);
-    img.src = url;
-  });
+// 위경도 <-> 슬리피맵(XYZ) 타일 좌표 변환 함수들
+function lonLatToTileXY(lon, lat, z) {
+  const n = Math.pow(2, z);
+  const x = ((lon + 180) / 360) * n;
+  const latRad = (lat * Math.PI) / 180;
+  const y = ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n;
+  return { x, y };
 }
 
-// ---------------------------------------------------------------
-// 카카오맵에는 Google Maps 식 GroundOverlay가 없어서
-// 직접 이미지를 지도 위에 절대좌표로 배치/동기화합니다.
-// ---------------------------------------------------------------
-function createGroundOverlay(imageUrl, bounds) {
-  clearRadarOverlay();
-
-  const img = document.createElement("img");
-  img.src = imageUrl;
-  img.style.position = "absolute";
-  img.style.pointerEvents = "none";
-  img.style.opacity = "0.75";
-  img.style.zIndex = "10";
-  img.onerror = () => {
-    document.getElementById("status-note").textContent =
-      "레이더 이미지를 불러오지 못했습니다. authKey를 확인해주세요.";
-  };
-
-  document.getElementById("map").appendChild(img);
-  radarOverlayEl = { el: img, bounds };
-  positionGroundOverlay();
+function tileXYToLonLat(x, y, z) {
+  const n = Math.pow(2, z);
+  const lon = (x / n) * 360 - 180;
+  const latRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * y) / n)));
+  const lat = (latRad * 180) / Math.PI;
+  return { lon, lat };
 }
 
-function clearRadarOverlay() {
-  if (radarOverlayEl) {
-    radarOverlayEl.el.remove();
-    radarOverlayEl = null;
+function clearRadarTiles() {
+  radarTileEls.forEach(({ el }) => el.remove());
+  radarTileEls = [];
+}
+
+// 현재 지도 화면 범위에 필요한 타일들을 계산해서 새로 그림
+function renderRadarTiles() {
+  if (!map || currentLayer !== "precip" || !radarFrame) return;
+  clearRadarTiles();
+
+  const mapEl = document.getElementById("map");
+  const bounds = map.getBounds();
+  const sw = bounds.getSouthWest();
+  const ne = bounds.getNorthEast();
+  const lngSpan = ne.getLng() - sw.getLng();
+  if (lngSpan <= 0) return;
+
+  // 화면 폭(px)과 경도 범위를 이용해 화면 해상도에 맞는 타일 줌 레벨을 역산
+  let z = Math.round(Math.log2((mapEl.clientWidth * 360) / (256 * lngSpan)));
+  z = Math.max(2, Math.min(z, 8)); // RainViewer 타일이 지원하는 합리적 범위로 제한
+
+  const topLeft = lonLatToTileXY(sw.getLng(), ne.getLat(), z);
+  const bottomRight = lonLatToTileXY(ne.getLng(), sw.getLat(), z);
+
+  const xStart = Math.floor(topLeft.x);
+  const xEnd = Math.floor(bottomRight.x);
+  const yStart = Math.floor(topLeft.y);
+  const yEnd = Math.floor(bottomRight.y);
+
+  // 안전장치: 화면이 너무 넓게 잡혀 타일이 폭주하면 이번 렌더는 건너뜀
+  const MAX_TILES_PER_AXIS = 14;
+  if (xEnd - xStart + 1 > MAX_TILES_PER_AXIS || yEnd - yStart + 1 > MAX_TILES_PER_AXIS) return;
+
+  for (let tx = xStart; tx <= xEnd; tx++) {
+    for (let ty = yStart; ty <= yEnd; ty++) {
+      const nw = tileXYToLonLat(tx, ty, z);
+      const se = tileXYToLonLat(tx + 1, ty + 1, z);
+
+      const img = document.createElement("img");
+      // 색상 스킴 2 = 흔히 쓰이는 파랑~빨강 강수 팔레트, 1_1 = 스무딩 + 눈 표시 켬
+      img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tx}/${ty}/2/1_1.png`;
+      img.style.position = "absolute";
+      img.style.pointerEvents = "none";
+      img.style.zIndex = "10";
+      img.style.opacity = "0.75";
+      mapEl.appendChild(img);
+
+      radarTileEls.push({ el: img, nw, se });
+    }
   }
+
+  positionRadarTiles();
 }
 
-function positionGroundOverlay() {
-  if (!radarOverlayEl || !map) return;
+function positionRadarTiles() {
+  if (!map) return;
   const proj = map.getProjection();
-  const { swLat, swLng, neLat, neLng } = radarOverlayEl.bounds;
 
-  const swPoint = proj.pointFromCoords(new kakao.maps.LatLng(swLat, swLng));
-  const nePoint = proj.pointFromCoords(new kakao.maps.LatLng(neLat, neLng));
+  radarTileEls.forEach(({ el, nw, se }) => {
+    const p1 = proj.pointFromCoords(new kakao.maps.LatLng(nw.lat, nw.lon));
+    const p2 = proj.pointFromCoords(new kakao.maps.LatLng(se.lat, se.lon));
 
-  const left = Math.min(swPoint.x, nePoint.x);
-  const top = Math.min(swPoint.y, nePoint.y);
-  const width = Math.abs(nePoint.x - swPoint.x);
-  const height = Math.abs(swPoint.y - nePoint.y);
+    const left = Math.min(p1.x, p2.x);
+    const top = Math.min(p1.y, p2.y);
+    const width = Math.abs(p2.x - p1.x);
+    const height = Math.abs(p2.y - p1.y);
 
-  Object.assign(radarOverlayEl.el.style, {
-    left: `${left}px`,
-    top: `${top}px`,
-    width: `${width}px`,
-    height: `${height}px`,
+    Object.assign(el.style, {
+      left: `${left}px`,
+      top: `${top}px`,
+      width: `${width}px`,
+      height: `${height}px`,
+    });
   });
 }
 
-function setupGroundOverlaySync() {
-  kakao.maps.event.addListener(map, "zoom_changed", positionGroundOverlay);
-  kakao.maps.event.addListener(map, "center_changed", positionGroundOverlay);
-  kakao.maps.event.addListener(map, "dragend", positionGroundOverlay);
+function setupRadarTileSync() {
+  const rerender = () => {
+    if (currentLayer === "precip") renderRadarTiles();
+  };
+  kakao.maps.event.addListener(map, "idle", rerender);
   window.addEventListener("resize", () => {
     map.relayout();
-    positionGroundOverlay();
+    rerender();
   });
 }

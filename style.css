@@ -7,9 +7,28 @@
   --accent: #38bdf8;
   --accent-dim: rgba(56, 189, 248, 0.15);
 }
+
 * { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; height: 100%; font-family: "Pretendard", -apple-system, "Malgun Gothic", sans-serif; }
-#map { width: 100%; height: 100%; position: relative; overflow: hidden; }
+
+/* 1. 화면 전체 고정 및 빈 공간 방지 */
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden; /* 스크롤바 방지 */
+  font-family: "Pretendard", -apple-system, "Malgun Gothic", sans-serif;
+  background: var(--bg);
+}
+
+#map {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+  overflow: hidden;
+}
 
 /* 상단 우측 레이어 토글 */
 #layer-panel {
@@ -26,6 +45,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: "Pretendard", -ap
   gap: 4px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.35);
 }
+
 .layer-btn {
   appearance: none;
   border: none;

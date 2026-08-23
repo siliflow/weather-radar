@@ -81,7 +81,7 @@ function getTodayString() {
 
 async function loadRadarLayer() {
   const statusNote = document.getElementById("status-note");
-  statusNote.textContent = "레이더 목록 불러오는 중...";
+  statusNote.textContent = "레이더 이미지 불러오는 중...";
 
   const today = getTodayString();
   const apiUrl =
@@ -92,38 +92,42 @@ async function loadRadarLayer() {
   try {
     const res = await fetch(apiUrl);
     const text = await res.text();
-
-    // ---- 디버그: 실제 응답 구조를 콘솔에서 확인하기 위한 임시 로그 ----
-    console.log("[레이더 API 원본 응답]", text);
-
     const xml = new DOMParser().parseFromString(text, "text/xml");
-    const errorNode = xml.querySelector("cmmMsgHeader, returnAuthMsg");
-    if (errorNode) {
-      statusNote.textContent = "API 오류: 콘솔(F12)을 확인해주세요.";
+
+    const resultCode = xml.querySelector("resultCode")?.textContent;
+    if (resultCode && resultCode !== "00") {
+      const msg = xml.querySelector("resultMsg")?.textContent || "알 수 없는 오류";
+      statusNote.textContent = `API 오류: ${msg}`;
       return;
     }
 
-    const items = Array.from(xml.querySelectorAll("item"));
-    if (items.length === 0) {
-      statusNote.textContent = "레이더 목록이 비어있습니다. 콘솔(F12)에서 원본 응답을 확인해주세요.";
+    // 하나의 <item> 안에 <rdr-img-file> 태그가 시간순으로 여러 개 들어있음.
+    // 가장 마지막 것이 최신 이미지.
+    const fileNodes = xml.querySelectorAll("rdr-img-file");
+    if (fileNodes.length === 0) {
+      statusNote.textContent = "레이더 이미지 목록이 비어있습니다.";
       return;
     }
 
-    // item 안의 자식 태그 이름을 모르므로, 첫 번째 item의 모든 자식을 콘솔에 출력
-    console.log("[첫 item의 필드들]", items[0].children.length
-      ? Array.from(items[0].children).map((c) => `${c.tagName}=${c.textContent}`)
-      : items[0].textContent);
+    const latestUrl = fileNodes[fileNodes.length - 1].textContent.trim();
+    const httpsUrl = latestUrl.replace(/^http:\/\//, "https://");
 
-    statusNote.textContent = `${items.length}개 항목 수신 — 콘솔(F12)에서 구조 확인 필요`;
+    // 파일명 끝의 yyyyMMddHHmm 부분에서 관측시각 표시
+    const m = httpsUrl.match(/(\d{8})(\d{4})\.png$/);
+    if (m) {
+      const [, ymd, hm] = m;
+      statusNote.textContent =
+        `관측시각 ${ymd.slice(0, 4)}-${ymd.slice(4, 6)}-${ymd.slice(6, 8)} ${hm.slice(0, 2)}:${hm.slice(2, 4)} (KST)`;
+    }
 
-    // TODO: 실제 필드명을 콘솔에서 확인한 뒤, 아래 두 줄을 맞는 필드명으로 교체
-    // const latest = items[items.length - 1];
-    // const imgUrl = latest.querySelector("실제필드명").textContent;
-    // const bounds = { swLat: 32.0, swLng: 121.0, neLat: 43.2, neLng: 133.0 };
-    // createGroundOverlay(imgUrl, bounds);
+    const bounds = {
+      swLat: 32.0, swLng: 121.0,
+      neLat: 43.2, neLng: 133.0,
+    };
+    createGroundOverlay(httpsUrl, bounds);
   } catch (err) {
     console.error(err);
-    statusNote.textContent = "레이더 API 호출 실패 (콘솔 확인). CORS 문제일 수 있음.";
+    statusNote.textContent = "레이더 API 호출 실패 (콘솔 확인).";
   }
 }
 

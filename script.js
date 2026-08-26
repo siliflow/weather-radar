@@ -14,7 +14,7 @@ function loadKakaoSDK() {
 let map;
 let currentLayer = "precip";
 let radarFrame = null;
-let customOverlay = null;
+let radarOverlay = null;
 
 const KOREA_BOUNDS = {
   minLat: 33.0,
@@ -105,7 +105,7 @@ async function loadRadarLayer() {
       `관측시각 ${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ` +
       `${pad(t.getHours())}:${pad(t.getMinutes())} (RainViewer 기준)`;
 
-    updateRadarOverlay();
+    renderRadarCanvas();
   } catch (err) {
     console.error(err);
     statusNote.textContent = "레이더 불러오기 실패.";
@@ -113,25 +113,24 @@ async function loadRadarLayer() {
 }
 
 function removeRadar() {
-  if (customOverlay) {
-    customOverlay.setMap(null);
-    customOverlay = null;
+  if (radarOverlay) {
+    radarOverlay.setMap(null);
+    radarOverlay = null;
   }
 }
 
-// 화면 영역(Bounds) 기준 타일 병합 Canvas 생성
-async function updateRadarOverlay() {
+function renderRadarCanvas() {
   if (!map || currentLayer !== "precip" || !radarFrame) return;
 
   const bounds = map.getBounds();
   const sw = bounds.getSouthWest();
   const ne = bounds.getNorthEast();
 
-  // 카카오 레벨 -> 표준 OSM 줌 변환
-  const zoom = Math.max(3, Math.min(15 - map.getLevel(), 8));
+  const kakaoLevel = map.getLevel();
+  const zoom = Math.max(3, Math.min(15 - kakaoLevel, 8));
   const n = Math.pow(2, zoom);
 
-  // 현재 화면을 포함하는 타일 경계 계산
+  // 화면 경계 타일 인덱스
   const minTileX = Math.floor(((sw.getLng() + 180) / 360) * n);
   const maxTileX = Math.floor(((ne.getLng() + 180) / 360) * n);
 
@@ -141,63 +140,50 @@ async function updateRadarOverlay() {
   const latRadSouth = (sw.getLat() * Math.PI) / 180;
   const maxTileY = Math.floor(((1 - Math.log(Math.tan(latRadSouth) + 1 / Math.cos(latRadSouth)) / Math.PI) / 2) * n);
 
-  const cols = maxTileX - minTileX + 1;
-  const rows = maxTileY - minTileY + 1;
+  const cols = Math.max(1, maxTileX - minTileX + 1);
+  const rows = Math.max(1, maxTileY - minTileY + 1);
 
-  const canvas = document.createElement("canvas");
-  canvas.width = cols * 256;
-  canvas.height = rows * 256;
-  const ctx = canvas.getContext("2d");
+  const container = document.createElement("div");
+  container.style.position = "relative";
+  container.style.width = `${cols * 256}px`;
+  container.style.height = `${rows * 256}px`;
+  container.style.pointerEvents = "none";
+  container.style.opacity = "0.65";
 
-  // 타일 이미지 병합
-  const loadPromises = [];
   for (let ty = minTileY; ty <= maxTileY; ty++) {
     for (let tx = minTileX; tx <= maxTileX; tx++) {
-      const img = new Image();
-      img.crossOrigin = "Anonymous";
+      const img = document.createElement("img");
       img.src = `${radarFrame.host}${radarFrame.path}/256/${zoom}/${tx}/${ty}/2/1_1.png`;
-
-      const drawX = (tx - minTileX) * 256;
-      const drawY = (ty - minTileY) * 256;
-
-      const p = new Promise((resolve) => {
-        img.onload = () => {
-          ctx.drawImage(img, drawX, drawY);
-          resolve();
-        };
-        img.onerror = () => resolve();
-      });
-      loadPromises.push(p);
+      img.style.position = "absolute";
+      img.style.left = `${(tx - minTileX) * 256}px`;
+      img.style.top = `${(ty - minTileY) * 256}px`;
+      img.style.width = "256px";
+      img.style.height = "256px";
+      img.onerror = () => { img.style.display = "none"; };
+      container.appendChild(img);
     }
   }
 
-  await Promise.all(loadPromises);
-
-  // 병합된 타일 영역의 북서쪽(NW) 실제 위경도 계산
+  // 타일 블록의 실제 북서쪽 위경도 계산
   const nwLng = (minTileX / n) * 360 - 180;
   const nwLatRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * minTileY) / n)));
   const nwLat = (nwLatRad * 180) / Math.PI;
 
-  const wrapper = document.createElement("div");
-  wrapper.style.opacity = "0.65";
-  wrapper.style.pointerEvents = "none";
-  wrapper.appendChild(canvas);
-
   removeRadar();
 
-  customOverlay = new kakao.maps.CustomOverlay({
+  radarOverlay = new kakao.maps.CustomOverlay({
     position: new kakao.maps.LatLng(nwLat, nwLng),
-    content: wrapper,
+    content: container,
     xAnchor: 0,
     yAnchor: 0,
     zIndex: 2,
   });
 
-  customOverlay.setMap(map);
+  radarOverlay.setMap(map);
 }
 
 function setupRadarEvents() {
   kakao.maps.event.addListener(map, "idle", () => {
-    if (currentLayer === "precip") updateRadarOverlay();
+    if (currentLayer === "precip") renderRadarCanvas();
   });
 }

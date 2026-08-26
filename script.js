@@ -14,20 +14,57 @@ function loadKakaoSDK() {
 let map;
 let currentLayer = "precip";
 
+// 한반도 중심 이동 제한 범위
+const KOREA_BOUNDS = {
+  minLat: 33.1,
+  maxLat: 38.8,
+  minLng: 124.2,
+  maxLng: 131.0
+};
+
 function initMap() {
   const container = document.getElementById("map");
   map = new kakao.maps.Map(container, {
-    center: new kakao.maps.LatLng(36.5, 127.8), // 대한민국 중심 부근
-    level: 10,
+    center: new kakao.maps.LatLng(36.2, 127.8),
+    level: 10, // 초기 확대 레벨
   });
 
+  setupMapLimits();
   setupLayerButtons();
   setupRadarTileSync();
   switchLayer("precip");
 }
 
 // ---------------------------------------------------------------
-// 레이어 전환 버튼
+// 1. 지도 축소 및 범위 제한 (바다만 나오거나 지도 비어보이는 현상 방지)
+// ---------------------------------------------------------------
+function setupMapLimits() {
+  // 카카오맵 특성상 레벨이 8~9를 넘어가면 주변 외곽 지도가 잘려 보입니다.
+  // 최대 축소 제한을 8로 설정하여 한반도 및 주변부만 차있게 유지합니다.
+  map.setMaxLevel(8);
+
+  const checkBounds = () => {
+    const center = map.getCenter();
+    let lat = center.getLat();
+    let lng = center.getLng();
+    let moved = false;
+
+    if (lat < KOREA_BOUNDS.minLat) { lat = KOREA_BOUNDS.minLat; moved = true; }
+    if (lat > KOREA_BOUNDS.maxLat) { lat = KOREA_BOUNDS.maxLat; moved = true; }
+    if (lng < KOREA_BOUNDS.minLng) { lng = KOREA_BOUNDS.minLng; moved = true; }
+    if (lng > KOREA_BOUNDS.maxLng) { lng = KOREA_BOUNDS.maxLng; moved = true; }
+
+    if (moved) {
+      map.setCenter(new kakao.maps.LatLng(lat, lng));
+    }
+  };
+
+  kakao.maps.event.addListener(map, "drag", checkBounds);
+  kakao.maps.event.addListener(map, "zoom_changed", checkBounds);
+}
+
+// ---------------------------------------------------------------
+// 레이어 전환
 // ---------------------------------------------------------------
 function setupLayerButtons() {
   document.querySelectorAll(".layer-btn").forEach((btn) => {
@@ -41,7 +78,7 @@ function setupLayerButtons() {
 
 function switchLayer(layer) {
   currentLayer = layer;
-  clearRadarTiles();
+  clearRadarOverlay();
 
   const statusTitle = document.getElementById("status-title");
   const statusValue = document.getElementById("status-value");
@@ -54,27 +91,23 @@ function switchLayer(layer) {
   } else if (layer === "temp") {
     statusTitle.textContent = "기온";
     statusValue.textContent = "준비 중";
-    statusNote.textContent = "기온 레이어는 관측지점 데이터 연동이 필요합니다. (TODO)";
-    // TODO: 초단기실황(기온) API 연동 → 지점별 마커 또는 보간 히트맵
+    statusNote.textContent = "기온 레이어 준비 중입니다.";
   } else if (layer === "air") {
     statusTitle.textContent = "대기질";
     statusValue.textContent = "준비 중";
-    statusNote.textContent = "에어코리아(airkorea.or.kr) API 키 발급 후 연동 필요. (TODO)";
-    // TODO: 에어코리아 대기오염정보 API 연동
+    statusNote.textContent = "에어코리아 API 연동 필요.";
   } else if (layer === "wind") {
     statusTitle.textContent = "바람";
     statusValue.textContent = "준비 중";
-    statusNote.textContent = "바람은 방향/풍속 데이터 + 화살표(또는 입자) 렌더링이 필요합니다. (TODO)";
-    // TODO: 바람 벡터 데이터 연동 및 시각화
+    statusNote.textContent = "바람 데이터 연동 준비 중입니다.";
   }
 }
 
 // ---------------------------------------------------------------
-// 강수량(레이더) 레이어 — RainViewer 타일 오버레이
-// (배경/범례 없는 투명 PNG 타일이라 애플 날씨 앱과 비슷한 느낌을 줌)
+// 2. 강수량(레이더) Canvas 통채 합성 렌더링 (여백/어긋남 완전 해결)
 // ---------------------------------------------------------------
-let radarFrame = null;      // { host, path } — RainViewer 최신 프레임 정보
-let radarTileEls = [];      // 현재 지도 위에 붙어있는 타일 <img> 요소들
+let radarFrame = null;
+let radarOverlay = null; // 오버레이 1개만 관리
 
 async function loadRadarLayer() {
   const statusNote = document.getElementById("status-note");
@@ -95,14 +128,14 @@ async function loadRadarLayer() {
       `관측시각 ${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ` +
       `${pad(t.getHours())}:${pad(t.getMinutes())} (RainViewer 기준)`;
 
-    renderRadarTiles();
+    renderRadarCanvas();
   } catch (err) {
     console.error(err);
-    statusNote.textContent = "레이더 불러오기 실패 (콘솔 확인).";
+    statusNote.textContent = "레이더 불러오기 실패.";
   }
 }
 
-// 위경도 <-> 슬리피맵(XYZ) 타일 좌표 변환 함수들
+// 좌표 변환 공식 (EPSG:3857 슬리피맵 타일)
 function lonLatToTileXY(lon, lat, z) {
   const n = Math.pow(2, z);
   const x = ((lon + 180) / 360) * n;
@@ -119,17 +152,16 @@ function tileXYToLonLat(x, y, z) {
   return { lon, lat };
 }
 
-function clearRadarTiles() {
-  radarTileEls.forEach((overlay) => overlay.setMap(null));
-  radarTileEls = [];
+function clearRadarOverlay() {
+  if (radarOverlay) {
+    radarOverlay.setMap(null);
+    radarOverlay = null;
+  }
 }
 
-// 현재 지도 화면 범위에 필요한 타일들을 계산해서 새로 그림.
-// 각 타일은 kakao.maps.CustomOverlay로 붙여서, 드래그/이동 시 카카오맵이
-// 알아서 위치를 따라 옮겨주도록 함 (우리가 직접 픽셀 좌표를 계산할 필요 없음).
-function renderRadarTiles() {
+// 단일 Canvas에 모든 타일을 붙여서 통으로 올리는 핵심 렌더링 로직
+async function renderRadarCanvas() {
   if (!map || currentLayer !== "precip" || !radarFrame) return;
-  clearRadarTiles();
 
   const mapEl = document.getElementById("map");
   const bounds = map.getBounds();
@@ -138,8 +170,9 @@ function renderRadarTiles() {
   const lngSpan = ne.getLng() - sw.getLng();
   if (lngSpan <= 0) return;
 
+  // 줌 레벨에 맞는 타일 Zoom 결정
   let z = Math.round(Math.log2((mapEl.clientWidth * 360) / (256 * lngSpan)));
-  z = Math.max(2, Math.min(z, 7));
+  z = Math.max(2, Math.min(z, 8));
 
   const topLeft = lonLatToTileXY(sw.getLng(), ne.getLat(), z);
   const bottomRight = lonLatToTileXY(ne.getLng(), sw.getLat(), z);
@@ -149,53 +182,80 @@ function renderRadarTiles() {
   const yStart = Math.floor(topLeft.y);
   const yEnd = Math.floor(bottomRight.y);
 
-  const MAX_TILES_PER_AXIS = 14;
-  if (xEnd - xStart + 1 > MAX_TILES_PER_AXIS || yEnd - yStart + 1 > MAX_TILES_PER_AXIS) return;
+  // 타일 범위 바운더리의 전체 위경도 구하기
+  const nwBound = tileXYToLonLat(xStart, yStart, z);
+  const seBound = tileXYToLonLat(xEnd + 1, yEnd + 1, z);
 
   const proj = map.getProjection();
+  const pStart = proj.pointFromCoords(new kakao.maps.LatLng(nwBound.lat, nwBound.lon));
+  const pEnd = proj.pointFromCoords(new kakao.maps.LatLng(seBound.lat, seBound.lon));
+
+  const totalWidth = Math.abs(pEnd.x - pStart.x);
+  const totalHeight = Math.abs(pEnd.y - pStart.y);
+
+  if (totalWidth < 1 || totalHeight < 1) return;
+
+  // 통짜 오버레이용 Canvas 생성
+  const canvas = document.createElement("canvas");
+  canvas.width = totalWidth;
+  canvas.height = totalHeight;
+  canvas.style.width = `${totalWidth}px`;
+  canvas.style.height = `${totalHeight}px`;
+  canvas.style.pointerEvents = "none";
+
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = true;
+  ctx.globalAlpha = 0.75; // 투명도 설정
+
+  const tileWidth = totalWidth / (xEnd - xStart + 1);
+  const tileHeight = totalHeight / (yEnd - yStart + 1);
+
+  const loadPromises = [];
 
   for (let tx = xStart; tx <= xEnd; tx++) {
     for (let ty = yStart; ty <= yEnd; ty++) {
-      const nw = tileXYToLonLat(tx, ty, z);
-      const se = tileXYToLonLat(tx + 1, ty + 1, z);
+      const drawX = (tx - xStart) * tileWidth;
+      const drawY = (ty - yStart) * tileHeight;
 
-      // 현재 화면 배율에서 이 타일이 몇 픽셀 크기인지 계산 (오버레이 이미지 크기용)
-      const p1 = proj.pointFromCoords(new kakao.maps.LatLng(nw.lat, nw.lon));
-      const p2 = proj.pointFromCoords(new kakao.maps.LatLng(se.lat, se.lon));
-      const width = Math.abs(p2.x - p1.x);
-      const height = Math.abs(p2.y - p1.y);
-      if (width < 1 || height < 1) continue;
+      const p = new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tx}/${ty}/2/1_1.png`;
 
-      const img = document.createElement("img");
-      img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tx}/${ty}/2/1_1.png`;
-      img.style.width = `${width}px`;
-      img.style.height = `${height}px`;
-      img.style.display = "block";
-      img.style.opacity = "0.75";
-      img.style.pointerEvents = "none";
-      img.onerror = () => { img.style.display = "none"; };
-
-      const overlay = new kakao.maps.CustomOverlay({
-        position: new kakao.maps.LatLng(nw.lat, nw.lon),
-        content: img,
-        xAnchor: 0,
-        yAnchor: 0,
-        zIndex: 10,
+        img.onload = () => {
+          // 캔버스에 타일 그리기 (경계선 오차 제거를 위해 0.5px 더 넓게 그림)
+          ctx.drawImage(img, drawX, drawY, tileWidth + 0.5, tileHeight + 0.5);
+          resolve();
+        };
+        img.onerror = () => resolve(); // 에러 타일 무시
       });
-      overlay.setMap(map);
-      radarTileEls.push(overlay);
+
+      loadPromises.push(p);
     }
   }
+
+  await Promise.all(loadPromises);
+
+  // 로딩 완료 후 이전 오버레이 지우고 새 캔버스 1개로 등록
+  clearRadarOverlay();
+
+  radarOverlay = new kakao.maps.CustomOverlay({
+    position: new kakao.maps.LatLng(nwBound.lat, nwBound.lon),
+    content: canvas,
+    xAnchor: 0,
+    yAnchor: 0,
+    zIndex: 10,
+  });
+
+  radarOverlay.setMap(map);
 }
 
 function setupRadarTileSync() {
   const rerender = () => {
-    if (currentLayer === "precip") renderRadarTiles();
+    if (currentLayer === "precip") renderRadarCanvas();
   };
 
-  // CustomOverlay는 드래그(이동) 중엔 카카오맵이 알아서 위치를 따라 옮겨주므로
-  // 별도 처리가 필요 없음. 확대/축소로 필요한 타일 구성이 달라질 때만 다시 그림.
-  kakao.maps.event.addListener(map, "zoom_start", clearRadarTiles);
+  kakao.maps.event.addListener(map, "zoom_start", clearRadarOverlay);
   kakao.maps.event.addListener(map, "idle", rerender);
 
   window.addEventListener("resize", () => {

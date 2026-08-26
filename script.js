@@ -119,6 +119,15 @@ function removeRadarTileset() {
   }
 }
 
+// 위경도를 Web Mercator Tile (X, Y)로 변환하는 정밀 공식
+function latLngToTile(lat, lng, zoom) {
+  const n = Math.pow(2, zoom);
+  const tileX = Math.floor(((lng + 180) / 360) * n);
+  const latRad = (lat * Math.PI) / 180;
+  const tileY = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
+  return { x: tileX, y: tileY };
+}
+
 function registerRadarTileset() {
   removeRadarTileset();
 
@@ -128,21 +137,22 @@ function registerRadarTileset() {
       width: 256,
       height: 256,
       getTile: function (x, y, level) {
-        // 카카오 레벨 -> 표준 OpenStreetMap Zoom(z) 변환
+        const proj = map.getProjection();
+
+        // 타일의 중심 픽셀 좌표 구하기
+        const centerPoint = new kakao.maps.Point(x * 256 + 128, y * 256 + 128);
+        const latLng = proj.coordsFromPoint(centerPoint);
+
+        // 카카오 레벨 -> 표준 OpenStreetMap 줌 레벨 변환
         const z = 15 - level;
         if (z < 2 || z > 18) return document.createElement("div");
 
-        // 카카오 타일 원점 오프셋 정밀 보정 수식
-        // 카카오 x, y 타일 인덱스를 표준 Web Mercator 타일로 좌표 변환
-        const pow2 = Math.pow(2, 14 - level);
-        
-        // 카카오의 픽셀 좌표계 원점 Offset 보정
-        const tileX = x;
-        const tileY = y;
+        // 표준 위경도 기준 RainViewer 타일 X, Y 정확하게 추출
+        const tile = latLngToTile(latLng.getLat(), latLng.getLng(), z);
 
         const img = document.createElement("img");
-        img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tileX}/${tileY}/2/1_1.png`;
-        img.style.opacity = "0.65";
+        img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tile.x}/${tile.y}/2/1_1.png`;
+        img.style.opacity = "0.6";
         img.style.width = "256px";
         img.style.height = "256px";
 

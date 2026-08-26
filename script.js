@@ -14,12 +14,12 @@ function loadKakaoSDK() {
 let map;
 let currentLayer = "precip";
 
-// 대한민국 범위 중심 제한 (너무 멀리 이동하는 것 방지)
+// 대한민국 및 주변 범위 중심 제한
 const KOREA_BOUNDS = {
-  minLat: 30.0,
-  maxLat: 42.0,
-  minLng: 118.0,
-  maxLng: 135.0,
+  minLat: 28.0,
+  maxLat: 43.0,
+  minLng: 116.0,
+  maxLng: 138.0,
 };
 
 function initMap() {
@@ -35,11 +35,11 @@ function initMap() {
 }
 
 // ---------------------------------------------------------------
-// 1. 지도 축소 및 범위 제한 (축소 범위를 더 크게 확장)
+// 1. 지도 축소 및 범위 제한 (1대 64km 스케일 = Level 12)
 // ---------------------------------------------------------------
 function setupMapLimits() {
-  // 축소 한계를 레벨 11로 늘려 한반도 전체 및 주변부가 충분히 보이도록 함
-  map.setMaxLevel();
+  // 카카오맵 Level 12 = 화면 축소 비율 1 : 64km (약 1:2,500,000)
+  map.setMaxLevel(12);
 
   const checkBounds = () => {
     const center = map.getCenter();
@@ -106,7 +106,6 @@ function switchLayer(layer) {
 // ---------------------------------------------------------------
 function getTileXyFromPixel(map, x, y, level) {
   const proj = map.getProjection();
-  // 카카오 타일의 좌상단, 우하단 픽셀 좌표를 위경도로 변환
   const pointNW = new kakao.maps.Point(x * 256, y * 256);
   const latLngNW = proj.coordsFromPoint(pointNW);
 
@@ -174,7 +173,6 @@ function registerRadarTileset() {
       width: 256,
       height: 256,
       getTile: function (x, y, level) {
-        // 카카오 타일의 좌표를 RainViewer 전용 X, Y, Z로 정밀 변환
         const { tileX, tileY, z } = getTileXyFromPixel(map, x, y, level);
 
         const img = document.createElement("img");

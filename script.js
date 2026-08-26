@@ -14,7 +14,7 @@ function loadKakaoSDK() {
 let map;
 let currentLayer = "precip";
 let radarFrame = null;
-let canvasOverlay = null;
+let radarOverlay = null;
 
 // 대한민국 영역 제한
 const KOREA_BOUNDS = {
@@ -107,7 +107,7 @@ async function loadRadarLayer() {
       `관측시각 ${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ` +
       `${pad(t.getHours())}:${pad(t.getMinutes())} (RainViewer 기준)`;
 
-    drawRadarOnMap();
+    renderRadarGrid();
   } catch (err) {
     console.error(err);
     statusNote.textContent = "레이더 불러오기 실패.";
@@ -115,59 +115,72 @@ async function loadRadarLayer() {
 }
 
 function clearRadarOverlay() {
-  if (canvasOverlay) {
-    canvasOverlay.setMap(null);
-    canvasOverlay = null;
+  if (radarOverlay) {
+    radarOverlay.setMap(null);
+    radarOverlay = null;
   }
 }
 
-function drawRadarOnMap() {
+function renderRadarGrid() {
   if (!map || currentLayer !== "precip" || !radarFrame) return;
 
-  const bounds = map.getBounds();
-  const sw = bounds.getSouthWest();
-  const ne = bounds.getNorthEast();
-
-  // 현재 화면 범위에 맞춰 RainViewer Coverage 타일을 캔버스 오버레이로 그림
-  const zoom = Math.max(2, Math.min(15 - map.getLevel(), 8));
   const center = map.getCenter();
+  const kakaoLevel = map.getLevel();
+  
+  // 카카오 레벨 -> OpenStreetMap Zoom 변환
+  const zoom = Math.max(3, Math.min(15 - kakaoLevel, 10));
   const n = Math.pow(2, zoom);
 
-  const tileX = Math.floor(((center.getLng() + 180) / 360) * n);
+  // 중심점 기준 타일 좌표 계산
+  const centerTileX = Math.floor(((center.getLng() + 180) / 360) * n);
   const latRad = (center.getLat() * Math.PI) / 180;
-  const tileY = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
+  const centerTileY = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
 
-  const canvas = document.createElement("canvas");
-  const mapContainer = document.getElementById("map");
-  canvas.width = mapContainer.clientWidth;
-  canvas.height = mapContainer.clientHeight;
-  canvas.style.pointerEvents = "none";
-  canvas.style.opacity = "0.7";
+  // 3x3 타일 그리드 생성용 컨테이너
+  const container = document.createElement("div");
+  container.style.display = "grid";
+  container.style.gridTemplateColumns = "repeat(3, 256px)";
+  container.style.gridTemplateRows = "repeat(3, 256px)";
+  container.style.width = "768px";
+  container.style.height = "768px";
+  container.style.pointerEvents = "none";
+  container.style.opacity = "0.7";
 
-  const ctx = canvas.getContext("2d");
-  const img = new Image();
-  img.crossOrigin = "Anonymous";
-  img.src = `${radarFrame.host}${radarFrame.path}/512/${zoom}/${tileX}/${tileY}/2/1_1.png`;
+  // 중심 주변 3x3 범위 타일 생성
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      const tx = centerTileX + dx;
+      const ty = centerTileY + dy;
+      
+      const img = document.createElement("img");
+      img.src = `${radarFrame.host}${radarFrame.path}/256/${zoom}/${tx}/${ty}/2/1_1.png`;
+      img.style.width = "256px";
+      img.style.height = "256px";
+      img.onerror = () => { img.style.visibility = "hidden"; };
+      container.appendChild(img);
+    }
+  }
 
-  img.onload = () => {
-    clearRadarOverlay();
-    // 화면 전체 크기에 맞게 캔버스에 렌더링
-    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+  clearRadarOverlay();
 
-    canvasOverlay = new kakao.maps.CustomOverlay({
-      position: center,
-      content: canvas,
-      xAnchor: 0.5,
-      yAnchor: 0.5,
-      zIndex: 2,
-    });
+  // 중심 타일의 실제 위경도 중심 구하기
+  const tileCenterLng = ((centerTileX + 0.5) / n) * 360 - 180;
+  const tileCenterLatRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * (centerTileY + 0.5)) / n)));
+  const tileCenterLat = (tileCenterLatRad * 180) / Math.PI;
 
-    canvasOverlay.setMap(map);
-  };
+  radarOverlay = new kakao.maps.CustomOverlay({
+    position: new kakao.maps.LatLng(tileCenterLat, tileCenterLng),
+    content: container,
+    xAnchor: 0.5,
+    yAnchor: 0.5,
+    zIndex: 2,
+  });
+
+  radarOverlay.setMap(map);
 }
 
 function setupRadarEvents() {
   kakao.maps.event.addListener(map, "idle", () => {
-    if (currentLayer === "precip") drawRadarOnMap();
+    if (currentLayer === "precip") renderRadarGrid();
   });
 }

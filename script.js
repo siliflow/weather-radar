@@ -1,36 +1,62 @@
+if (!CONFIG.KAKAO_JS_KEY || CONFIG.KAKAO_JS_KEY === "YOUR_KAKAO_JS_KEY") {
+  document.getElementById("status-note").textContent = "카카오 API 키를 확인해주세요.";
+} else {
+  loadKakaoSDK();
+}
+
+function loadKakaoSDK() {
+  const script = document.createElement("script");
+  script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_JS_KEY}&autoload=false`;
+  script.onload = () => kakao.maps.load(initMap);
+  document.head.appendChild(script);
+}
+
 let map;
-let radarLayer = null;
-let radarFrame = null;
 let currentLayer = "precip";
+let radarOverlay = null;
+let radarFrame = null;
 
-// 대한민국 범위 제한 (남서, 북동 위경도)
-const KOREA_BOUNDS = L.latLngBounds(
-  L.latLng(32.0, 123.0), // 남서쪽
-  L.latLng(39.5, 132.5)  // 북동쪽
-);
-
-document.addEventListener("DOMContentLoaded", () => {
-  initMap();
-  setupLayerButtons();
-  switchLayer("precip");
-});
+// 대한민국 영역 제한
+const KOREA_BOUNDS = {
+  minLat: 33.0,
+  maxLat: 38.9,
+  minLng: 124.0,
+  maxLng: 132.0,
+};
 
 function initMap() {
-  // Leaflet 지도 생성
-  map = L.map("map", {
-    center: [36.2, 127.8],
-    zoom: 7,
-    minZoom: 6,             // 1대 64km 수준으로 축소 제한
-    maxZoom: 12,            // 최대 확대 제한
-    maxBounds: KOREA_BOUNDS, // 한국 영역 벗어남 방지
-    maxBoundsViscosity: 1.0, // 바운더리 바깥으로 아예 못 튕겨나가게 고정
-    zoomControl: false
+  const container = document.getElementById("map");
+  map = new kakao.maps.Map(container, {
+    center: new kakao.maps.LatLng(36.2, 127.8),
+    level: 10, // 초기 레벨
   });
 
-  // 배경 지도 (Vworld 또는 OpenStreetMap - 바다 휑함 방지용 표준 지도)
-  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-    attribution: '&copy; OpenStreetMap'
-  }).addTo(map);
+  setupMapLimits();
+  setupLayerButtons();
+  setupRadarEvents();
+  switchLayer("precip");
+}
+
+// 1대 64km 제한 (카카오맵 Level 12)
+function setupMapLimits() {
+  map.setMaxLevel(12);
+
+  const checkBounds = () => {
+    const center = map.getCenter();
+    let lat = center.getLat();
+    let lng = center.getLng();
+    let moved = false;
+
+    if (lat < KOREA_BOUNDS.minLat) { lat = KOREA_BOUNDS.minLat; moved = true; }
+    if (lat > KOREA_BOUNDS.maxLat) { lat = KOREA_BOUNDS.maxLat; moved = true; }
+    if (lng < KOREA_BOUNDS.minLng) { lng = KOREA_BOUNDS.minLng; moved = true; }
+    if (lng > KOREA_BOUNDS.maxLng) { lng = KOREA_BOUNDS.maxLng; moved = true; }
+
+    if (moved) map.setCenter(new kakao.maps.LatLng(lat, lng));
+  };
+
+  kakao.maps.event.addListener(map, "dragend", checkBounds);
+  kakao.maps.event.addListener(map, "zoom_changed", checkBounds);
 }
 
 function setupLayerButtons() {
@@ -45,10 +71,7 @@ function setupLayerButtons() {
 
 function switchLayer(layer) {
   currentLayer = layer;
-  if (radarLayer) {
-    map.removeLayer(radarLayer);
-    radarLayer = null;
-  }
+  clearRadarOverlay();
 
   const statusTitle = document.getElementById("status-title");
   const statusValue = document.getElementById("status-value");
@@ -84,17 +107,65 @@ async function loadRadarLayer() {
       `관측시각 ${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ` +
       `${pad(t.getHours())}:${pad(t.getMinutes())} (RainViewer 기준)`;
 
-    // 표준 EPSG:3857 타일셋 1:1 매핑 (찢어짐/어긋남/환각 현상 0%)
-    const tileUrl = `${radarFrame.host}${radarFrame.path}/256/{z}/{x}/{y}/2/1_1.png`;
-    
-    radarLayer = L.tileLayer(tileUrl, {
-      opacity: 0.7,
-      tileSize: 256,
-      zIndex: 100
-    }).addTo(map);
-
+    updateRadarOverlay();
   } catch (err) {
     console.error(err);
     statusNote.textContent = "레이더 불러오기 실패.";
   }
+}
+
+function clearRadarOverlay() {
+  if (radarOverlay) {
+    radarOverlay.setMap(null);
+    radarOverlay = null;
+  }
+}
+
+// 지도 영역 기반 단일 레이더 이미지 매핑
+function updateRadarOverlay() {
+  if (!map || currentLayer !== "precip" || !radarFrame) return;
+
+  const bounds = map.getBounds();
+  const sw = bounds.getSouthWest();
+  const ne = bounds.getNorthEast();
+
+  // 타일 반복 현상을 방지하기 위한 단일 Coverage API 렌더링
+  const zoom = Math.max(2, Math.min(15 - map.getLevel(), 8));
+  const center = map.getCenter();
+  const n = Math.pow(2, zoom);
+  
+  const tileX = Math.floor(((center.getLng() + 180) / 360) * n);
+  const latRad = (center.getLat() * Math.PI) / 180;
+  const tileY = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
+
+  const imgUrl = `${radarFrame.host}${radarFrame.path}/512/${zoom}/${tileX}/${tileY}/2/1_1.png`;
+
+  const container = document.createElement("div");
+  container.style.position = "absolute";
+  container.style.pointerEvents = "none";
+  
+  const img = document.createElement("img");
+  img.src = imgUrl;
+  img.style.width = "512px";
+  img.style.height = "512px";
+  img.style.opacity = "0.65";
+  container.appendChild(img);
+
+  clearRadarOverlay();
+
+  radarOverlay = new kakao.maps.CustomOverlay({
+    position: center,
+    content: container,
+    xAnchor: 0.5,
+    yAnchor: 0.5,
+    zIndex: 2,
+  });
+
+  radarOverlay.setMap(map);
+}
+
+function setupRadarEvents() {
+  kakao.maps.event.addListener(map, "idle", () => {
+    if (currentLayer === "precip") updateRadarOverlay();
+  });
 }

@@ -13,14 +13,13 @@ function loadKakaoSDK() {
 
 let map;
 let currentLayer = "precip";
-let radarTileset = null; // 카카오맵 타일셋 객체
 
-// 대한민국 육지 중심 제한 범위
+// 대한민국 범위 중심 제한 (너무 멀리 이동하는 것 방지)
 const KOREA_BOUNDS = {
-  minLat: 33.1,
-  maxLat: 38.8,
-  minLng: 124.2,
-  maxLng: 131.0
+  minLat: 30.0,
+  maxLat: 42.0,
+  minLng: 118.0,
+  maxLng: 135.0,
 };
 
 function initMap() {
@@ -36,11 +35,11 @@ function initMap() {
 }
 
 // ---------------------------------------------------------------
-// 1. 지도 축소 및 범위 제한 (바다만 나오는 영역 차단)
+// 1. 지도 축소 및 범위 제한 (축소 범위를 더 크게 확장)
 // ---------------------------------------------------------------
 function setupMapLimits() {
-  // 카카오 지도 레이어가 비어 보이지 않도록 최대 축소 레벨을 8로 고정
-  map.setMaxLevel(9);
+  // 축소 한계를 레벨 11로 늘려 한반도 전체 및 주변부가 충분히 보이도록 함
+  map.setMaxLevel(11);
 
   const checkBounds = () => {
     const center = map.getCenter();
@@ -103,9 +102,35 @@ function switchLayer(layer) {
 }
 
 // ---------------------------------------------------------------
-// 3. 카카오맵 공식 Tileset을 이용한 레이더 타일 동기화 (어긋남 100% 해결)
+// 3. 좌표계 변환 함수 (카카오 타일 영역 -> 표준 OSM/Mercator 타일 X, Y)
+// ---------------------------------------------------------------
+function getTileXyFromPixel(map, x, y, level) {
+  const proj = map.getProjection();
+  // 카카오 타일의 좌상단, 우하단 픽셀 좌표를 위경도로 변환
+  const pointNW = new kakao.maps.Point(x * 256, y * 256);
+  const latLngNW = proj.coordsFromPoint(pointNW);
+
+  // Kakao Level -> Standard Web Mercator Zoom Level (Z)
+  const z = Math.max(2, Math.min(15 - level, 8));
+
+  const n = Math.pow(2, z);
+  const lon = latLngNW.getLng();
+  const lat = latLngNW.getLat();
+
+  const tileX = Math.floor(((lon + 180) / 360) * n);
+  const latRad = (lat * Math.PI) / 180;
+  const tileY = Math.floor(
+    ((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n
+  );
+
+  return { tileX, tileY, z };
+}
+
+// ---------------------------------------------------------------
+// 4. Tileset을 이용한 레이더 오버레이 연동
 // ---------------------------------------------------------------
 let radarFrame = null;
+let isTilesetAdded = false;
 
 async function loadRadarLayer() {
   const statusNote = document.getElementById("status-note");
@@ -134,32 +159,29 @@ async function loadRadarLayer() {
 }
 
 function removeRadarTileset() {
-  if (radarTileset) {
+  if (isTilesetAdded) {
     map.removeOverlayMapTypeId(kakao.maps.MapTypeId.USER_RADAR);
-    radarTileset = null;
+    isTilesetAdded = false;
   }
 }
 
 function registerRadarTileset() {
   removeRadarTileset();
 
-  // 사용자 정의 타일셋 등록
   kakao.maps.Tileset.add(
     "USER_RADAR",
     new kakao.maps.Tileset({
       width: 256,
       height: 256,
-      getTile: function (x, y, z) {
-        // RainViewer의 Zoom Level과 카카오맵 Zoom Level 간 매핑
-        // 카카오맵은 z가 커질수록 확대(숫자가 작음), RainViewer는 숫자가 커질수록 확대
-        const rainViewerZoom = Math.max(2, Math.min(19 - z, 8));
+      getTile: function (x, y, level) {
+        // 카카오 타일의 좌표를 RainViewer 전용 X, Y, Z로 정밀 변환
+        const { tileX, tileY, z } = getTileXyFromPixel(map, x, y, level);
 
         const img = document.createElement("img");
-        img.src = `${radarFrame.host}${radarFrame.path}/256/${rainViewerZoom}/${x}/${y}/2/1_1.png`;
-        img.style.opacity = "0.7"; // 레이더 투명도 설정
+        img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tileX}/${tileY}/2/1_1.png`;
+        img.style.opacity = "0.75";
         img.style.display = "block";
 
-        // 없는 타일(404) 처리
         img.onerror = () => {
           img.style.display = "none";
         };
@@ -169,7 +191,6 @@ function registerRadarTileset() {
     })
   );
 
-  // 지도의 상단 레이어로 추가
   map.addOverlayMapTypeId(kakao.maps.MapTypeId.USER_RADAR);
-  radarTileset = true;
+  isTilesetAdded = true;
 }

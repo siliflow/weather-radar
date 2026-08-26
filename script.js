@@ -1,82 +1,128 @@
-// renderRadarTiles() 함수에서 CustomOverlay 생성 부분을 이렇게 수정
+// ================================================================
+// 전체 화면 레이더 - 카카오맵 없이 이미지만 표시
+// ================================================================
 
-function renderRadarTiles() {
-  if (currentLayer !== "precip" || !radarFrame || !map) return;
-  
-  clearRadarOverlay();
+const radarImage = document.getElementById('radar-image');
+const loadingText = document.getElementById('loading-text');
+const timeDisplay = document.getElementById('time-display');
+const statusText = document.getElementById('status-text');
+let currentImageUrl = '';
+let retryCount = 0;
 
-  const mapEl = document.getElementById("map");
-  const bounds = map.getBounds();
-  const sw = bounds.getSouthWest();
-  const ne = bounds.getNorthEast();
-  const lngSpan = ne.getLng() - sw.getLng();
-  if (lngSpan <= 0) return;
+// ===== 최신 레이더 이미지 가져오기 =====
+async function fetchRadarImage() {
+  try {
+    loadingText.style.display = 'block';
+    loadingText.textContent = '🌧️ 레이더 불러오는 중...';
+    radarImage.style.opacity = '0.3';
+    statusText.textContent = '연결 중...';
 
-  let z = Math.round(Math.log2((mapEl.clientWidth * 360) / (256 * lngSpan)));
-  z = Math.max(2, Math.min(z, 7));
-
-  const topLeft = lonLatToTileXY(sw.getLng(), ne.getLat(), z);
-  const bottomRight = lonLatToTileXY(ne.getLng(), sw.getLat(), z);
-
-  // ★★★ 중요: 여유 타일을 3배로 늘림 (드래그 시 빈 공간 방지) ★★★
-  const padding = 3;
-  const xStart = Math.floor(topLeft.x) - padding;
-  const xEnd = Math.floor(bottomRight.x) + padding;
-  const yStart = Math.floor(topLeft.y) - padding;
-  const yEnd = Math.floor(bottomRight.y) + padding;
-
-  const proj = map.getProjection();
-  
-  // 컨테이너 생성
-  const container = document.createElement('div');
-  container.style.position = 'absolute';
-  container.style.top = '0';
-  container.style.left = '0';
-  container.style.width = '100%';
-  container.style.height = '100%';
-  container.style.pointerEvents = 'none';
-  container.style.zIndex = '999'; // ★★★ zIndex를 매우 높게 설정 ★★★
-
-  for (let tx = xStart; tx <= xEnd; tx++) {
-    for (let ty = yStart; ty <= yEnd; ty++) {
-      const nw = tileXYToLonLat(tx, ty, z);
-      const se = tileXYToLonLat(tx + 1, ty + 1, z);
-
-      const p1 = proj.pointFromCoords(new kakao.maps.LatLng(nw.lat, nw.lon));
-      const p2 = proj.pointFromCoords(new kakao.maps.LatLng(se.lat, se.lon));
-      const width = Math.abs(p2.x - p1.x);
-      const height = Math.abs(p2.y - p1.y);
-      
-      if (width < 1 || height < 1) continue;
-
-      const img = document.createElement("img");
-      img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tx}/${ty}/2/1_1.png`;
-      img.style.position = 'absolute';
-      img.style.left = `${Math.min(p1.x, p2.x)}px`;
-      img.style.top = `${Math.min(p1.y, p2.y)}px`;
-      img.style.width = `${width}px`;
-      img.style.height = `${height}px`;
-      img.style.display = "block";
-      img.style.opacity = "0.85";
-      img.style.pointerEvents = "none";
-      img.style.backgroundColor = "#0b1220"; // ★★★ 배경색 추가 ★★★
-      
-      img.onerror = () => {
-        img.style.display = "none";
-      };
-
-      container.appendChild(img);
-    }
+    // 1. RainViewer API 호출
+    const response = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    const data = await response.json();
+    
+    // 2. 가장 최신 데이터
+    const pastData = data.radar.past;
+    const latest = pastData[pastData.length - 1];
+    
+    // 3. 이미지 URL (한반도 중심, 넓은 범위)
+    const imageUrl = `${data.host}${latest.path}/512/5/16/16/2/1_1.png`;
+    
+    // 4. 이미지 로드
+    currentImageUrl = imageUrl;
+    radarImage.src = imageUrl;
+    
+    // 5. 시간 표시
+    const date = new Date(latest.time * 1000);
+    timeDisplay.textContent = 
+      `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    
+    // 6. 로드 완료
+    radarImage.onload = () => {
+      loadingText.style.display = 'none';
+      radarImage.style.opacity = '1';
+      statusText.textContent = '✅ 실시간 레이더';
+      retryCount = 0;
+    };
+    
+    // 7. 로드 실패
+    radarImage.onerror = () => {
+      retryCount++;
+      loadingText.textContent = `⚠️ 로드 실패 (${retryCount}회), 재시도 중...`;
+      statusText.textContent = '❌ 오류 발생';
+      setTimeout(fetchRadarImage, 3000);
+    };
+    
+  } catch (error) {
+    console.error('레이더 가져오기 실패:', error);
+    retryCount++;
+    loadingText.textContent = `⚠️ 네트워크 오류 (${retryCount}회), 재시도 중...`;
+    statusText.textContent = '❌ 네트워크 오류';
+    setTimeout(fetchRadarImage, 5000);
   }
-
-  // ★★★ CustomOverlay를 지도에 추가 ★★★
-  radarOverlay = new kakao.maps.CustomOverlay({
-    position: new kakao.maps.LatLng(36.5, 127.8),
-    content: container,
-    xAnchor: 0.5,
-    yAnchor: 0.5,
-    zIndex: 999, // ★★★ zIndex를 매우 높게 ★★★
-  });
-  
-  radarOverlay.setMap(map);
 }
+
+// ===== 더 넓은 범위 시도 (한반도+주변국) =====
+async function fetchWideRadar() {
+  try {
+    loadingText.style.display = 'block';
+    loadingText.textContent = '🌏 넓은 범위 로딩 중...';
+    radarImage.style.opacity = '0.3';
+    
+    const response = await fetch('https://api.rainviewer.com/public/weather-maps.json');
+    const data = await response.json();
+    const latest = data.radar.past[data.radar.past.length - 1];
+    
+    // z=4: 더 넓은 범위 (동아시아 전체)
+    const imageUrl = `${data.host}${latest.path}/512/4/8/8/2/1_1.png`;
+    
+    currentImageUrl = imageUrl;
+    radarImage.src = imageUrl;
+    
+    const date = new Date(latest.time * 1000);
+    timeDisplay.textContent = 
+      `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    
+    radarImage.onload = () => {
+      loadingText.style.display = 'none';
+      radarImage.style.opacity = '1';
+      statusText.textContent = '✅ 넓은 범위 레이더';
+    };
+    
+  } catch (error) {
+    console.error('넓은 범위 로드 실패:', error);
+    setTimeout(fetchWideRadar, 5000);
+  }
+}
+
+// ===== 새로고침 =====
+document.getElementById('refresh-btn').addEventListener('click', () => {
+  const timestamp = new Date().getTime();
+  if (currentImageUrl) {
+    radarImage.src = `${currentImageUrl}?t=${timestamp}`;
+    loadingText.textContent = '🔄 업데이트 중...';
+    loadingText.style.display = 'block';
+    statusText.textContent = '🔄 새로고침 중...';
+  } else {
+    fetchRadarImage();
+  }
+});
+
+// ===== 자동 업데이트 (2분마다) =====
+setInterval(() => {
+  fetchRadarImage();
+}, 120000);
+
+// ===== 키보드 단축키: R =====
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'r' || e.key === 'R') {
+    document.getElementById('refresh-btn').click();
+  }
+});
+
+// ===== 시작 =====
+// 기본: 넓은 범위로 시작
+fetchWideRadar();
+
+console.log('🌧️ 전체화면 레이더 실행 중! (R키로 새로고침)');
+console.log('📌 문제 있으면 콘솔을 확인하세요.');

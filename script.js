@@ -40,7 +40,7 @@ function initMap() {
 // ---------------------------------------------------------------
 function setupMapLimits() {
   // 카카오 지도 레이어가 비어 보이지 않도록 최대 축소 레벨을 8로 고정
-  map.setMaxLevel(17);
+  map.setMaxLevel(16);
 
   const checkBounds = () => {
     const center = map.getCenter();

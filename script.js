@@ -107,7 +107,7 @@ async function loadRadarLayer() {
       `관측시각 ${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ` +
       `${pad(t.getHours())}:${pad(t.getMinutes())} (RainViewer 기준)`;
 
-    renderRadarGrid();
+    renderRadarCanvas();
   } catch (err) {
     console.error(err);
     statusNote.textContent = "레이더 불러오기 실패.";
@@ -121,37 +121,43 @@ function clearRadarOverlay() {
   }
 }
 
-function renderRadarGrid() {
+// 화면 Bounding Box 기반 정밀 Canvas 오버레이
+function renderRadarCanvas() {
   if (!map || currentLayer !== "precip" || !radarFrame) return;
 
-  const center = map.getCenter();
+  const bounds = map.getBounds();
+  const sw = bounds.getSouthWest();
+  const ne = bounds.getNorthEast();
+
+  // 카카오 레벨 -> 표준 줌 변환
   const kakaoLevel = map.getLevel();
-  
-  // 카카오 레벨 -> OpenStreetMap Zoom 변환
-  const zoom = Math.max(3, Math.min(15 - kakaoLevel, 10));
+  const zoom = Math.max(3, Math.min(15 - kakaoLevel, 9));
   const n = Math.pow(2, zoom);
 
-  // 중심점 기준 타일 좌표 계산
-  const centerTileX = Math.floor(((center.getLng() + 180) / 360) * n);
-  const latRad = (center.getLat() * Math.PI) / 180;
-  const centerTileY = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
+  // 화면 서/동/남/북 타일 범위 계산
+  const minTileX = Math.floor(((sw.getLng() + 180) / 360) * n);
+  const maxTileX = Math.floor(((ne.getLng() + 180) / 360) * n);
+  
+  const latRadNorth = (ne.getLat() * Math.PI) / 180;
+  const minTileY = Math.floor(((1 - Math.log(Math.tan(latRadNorth) + 1 / Math.cos(latRadNorth)) / Math.PI) / 2) * n);
+  
+  const latRadSouth = (sw.getLat() * Math.PI) / 180;
+  const maxTileY = Math.floor(((1 - Math.log(Math.tan(latRadSouth) + 1 / Math.cos(latRadSouth)) / Math.PI) / 2) * n);
 
-  // 3x3 타일 그리드 생성용 컨테이너
+  const cols = maxTileX - minTileX + 1;
+  const rows = maxTileY - minTileY + 1;
+
   const container = document.createElement("div");
   container.style.display = "grid";
-  container.style.gridTemplateColumns = "repeat(3, 256px)";
-  container.style.gridTemplateRows = "repeat(3, 256px)";
-  container.style.width = "768px";
-  container.style.height = "768px";
+  container.style.gridTemplateColumns = `repeat(${cols}, 256px)`;
+  container.style.gridTemplateRows = `repeat(${rows}, 256px)`;
+  container.style.width = `${cols * 256}px`;
+  container.style.height = `${rows * 256}px`;
   container.style.pointerEvents = "none";
-  container.style.opacity = "0.7";
+  container.style.opacity = "0.65";
 
-  // 중심 주변 3x3 범위 타일 생성
-  for (let dy = -1; dy <= 1; dy++) {
-    for (let dx = -1; dx <= 1; dx++) {
-      const tx = centerTileX + dx;
-      const ty = centerTileY + dy;
-      
+  for (let ty = minTileY; ty <= maxTileY; ty++) {
+    for (let tx = minTileX; tx <= maxTileX; tx++) {
       const img = document.createElement("img");
       img.src = `${radarFrame.host}${radarFrame.path}/256/${zoom}/${tx}/${ty}/2/1_1.png`;
       img.style.width = "256px";
@@ -161,18 +167,18 @@ function renderRadarGrid() {
     }
   }
 
+  // 타일 블록 영역의 정확한 북서쪽(Top-Left) 좌표 계산
+  const nwLng = (minTileX / n) * 360 - 180;
+  const nwLatRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * minTileY) / n)));
+  const nwLat = (nwLatRad * 180) / Math.PI;
+
   clearRadarOverlay();
 
-  // 중심 타일의 실제 위경도 중심 구하기
-  const tileCenterLng = ((centerTileX + 0.5) / n) * 360 - 180;
-  const tileCenterLatRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * (centerTileY + 0.5)) / n)));
-  const tileCenterLat = (tileCenterLatRad * 180) / Math.PI;
-
   radarOverlay = new kakao.maps.CustomOverlay({
-    position: new kakao.maps.LatLng(tileCenterLat, tileCenterLng),
+    position: new kakao.maps.LatLng(nwLat, nwLng),
     content: container,
-    xAnchor: 0.5,
-    yAnchor: 0.5,
+    xAnchor: 0,
+    yAnchor: 0,
     zIndex: 2,
   });
 
@@ -181,6 +187,6 @@ function renderRadarGrid() {
 
 function setupRadarEvents() {
   kakao.maps.event.addListener(map, "idle", () => {
-    if (currentLayer === "precip") renderRadarGrid();
+    if (currentLayer === "precip") renderRadarCanvas();
   });
 }

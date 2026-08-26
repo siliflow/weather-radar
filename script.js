@@ -39,7 +39,7 @@ function initMap() {
 // ---------------------------------------------------------------
 function setupMapLimits() {
   // 축소 한계를 레벨 11로 늘려 한반도 전체 및 주변부가 충분히 보이도록 함
-  map.setMaxLevel(17);
+  map.setMaxLevel();
 
   const checkBounds = () => {
     const center = map.getCenter();

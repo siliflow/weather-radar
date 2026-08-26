@@ -28,7 +28,7 @@ function initMap() {
   const container = document.getElementById("map");
   map = new kakao.maps.Map(container, {
     center: new kakao.maps.LatLng(36.2, 127.8),
-    level: 10, // 초기 레벨
+    level: 10,
   });
 
   setupMapLimits();
@@ -121,15 +121,9 @@ function clearRadarOverlay() {
   }
 }
 
-// 지도 영역 기반 단일 레이더 이미지 매핑
 function updateRadarOverlay() {
   if (!map || currentLayer !== "precip" || !radarFrame) return;
 
-  const bounds = map.getBounds();
-  const sw = bounds.getSouthWest();
-  const ne = bounds.getNorthEast();
-
-  // 타일 반복 현상을 방지하기 위한 단일 Coverage API 렌더링
   const zoom = Math.max(2, Math.min(15 - map.getLevel(), 8));
   const center = map.getCenter();
   const n = Math.pow(2, zoom);

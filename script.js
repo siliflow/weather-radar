@@ -14,9 +14,8 @@ function loadKakaoSDK() {
 let map;
 let currentLayer = "precip";
 let radarFrame = null;
-let isRadarAdded = false;
+let customOverlay = null;
 
-// 대한민국 영역 제한
 const KOREA_BOUNDS = {
   minLat: 33.0,
   maxLat: 38.9,
@@ -33,6 +32,7 @@ function initMap() {
 
   setupMapLimits();
   setupLayerButtons();
+  setupRadarEvents();
   switchLayer("precip");
 }
 
@@ -69,7 +69,7 @@ function setupLayerButtons() {
 
 function switchLayer(layer) {
   currentLayer = layer;
-  removeRadarTileset();
+  removeRadar();
 
   const statusTitle = document.getElementById("status-title");
   const statusValue = document.getElementById("status-value");
@@ -105,66 +105,99 @@ async function loadRadarLayer() {
       `관측시각 ${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ` +
       `${pad(t.getHours())}:${pad(t.getMinutes())} (RainViewer 기준)`;
 
-    registerRadarTileset();
+    updateRadarOverlay();
   } catch (err) {
     console.error(err);
     statusNote.textContent = "레이더 불러오기 실패.";
   }
 }
 
-function removeRadarTileset() {
-  if (isRadarAdded) {
-    map.removeOverlayMapTypeId(kakao.maps.MapTypeId.USER_RADAR);
-    isRadarAdded = false;
+function removeRadar() {
+  if (customOverlay) {
+    customOverlay.setMap(null);
+    customOverlay = null;
   }
 }
 
-// 위경도를 Web Mercator Tile (X, Y)로 변환하는 정밀 공식
-function latLngToTile(lat, lng, zoom) {
+// 화면 영역(Bounds) 기준 타일 병합 Canvas 생성
+async function updateRadarOverlay() {
+  if (!map || currentLayer !== "precip" || !radarFrame) return;
+
+  const bounds = map.getBounds();
+  const sw = bounds.getSouthWest();
+  const ne = bounds.getNorthEast();
+
+  // 카카오 레벨 -> 표준 OSM 줌 변환
+  const zoom = Math.max(3, Math.min(15 - map.getLevel(), 8));
   const n = Math.pow(2, zoom);
-  const tileX = Math.floor(((lng + 180) / 360) * n);
-  const latRad = (lat * Math.PI) / 180;
-  const tileY = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
-  return { x: tileX, y: tileY };
+
+  // 현재 화면을 포함하는 타일 경계 계산
+  const minTileX = Math.floor(((sw.getLng() + 180) / 360) * n);
+  const maxTileX = Math.floor(((ne.getLng() + 180) / 360) * n);
+
+  const latRadNorth = (ne.getLat() * Math.PI) / 180;
+  const minTileY = Math.floor(((1 - Math.log(Math.tan(latRadNorth) + 1 / Math.cos(latRadNorth)) / Math.PI) / 2) * n);
+
+  const latRadSouth = (sw.getLat() * Math.PI) / 180;
+  const maxTileY = Math.floor(((1 - Math.log(Math.tan(latRadSouth) + 1 / Math.cos(latRadSouth)) / Math.PI) / 2) * n);
+
+  const cols = maxTileX - minTileX + 1;
+  const rows = maxTileY - minTileY + 1;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = cols * 256;
+  canvas.height = rows * 256;
+  const ctx = canvas.getContext("2d");
+
+  // 타일 이미지 병합
+  const loadPromises = [];
+  for (let ty = minTileY; ty <= maxTileY; ty++) {
+    for (let tx = minTileX; tx <= maxTileX; tx++) {
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      img.src = `${radarFrame.host}${radarFrame.path}/256/${zoom}/${tx}/${ty}/2/1_1.png`;
+
+      const drawX = (tx - minTileX) * 256;
+      const drawY = (ty - minTileY) * 256;
+
+      const p = new Promise((resolve) => {
+        img.onload = () => {
+          ctx.drawImage(img, drawX, drawY);
+          resolve();
+        };
+        img.onerror = () => resolve();
+      });
+      loadPromises.push(p);
+    }
+  }
+
+  await Promise.all(loadPromises);
+
+  // 병합된 타일 영역의 북서쪽(NW) 실제 위경도 계산
+  const nwLng = (minTileX / n) * 360 - 180;
+  const nwLatRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * minTileY) / n)));
+  const nwLat = (nwLatRad * 180) / Math.PI;
+
+  const wrapper = document.createElement("div");
+  wrapper.style.opacity = "0.65";
+  wrapper.style.pointerEvents = "none";
+  wrapper.appendChild(canvas);
+
+  removeRadar();
+
+  customOverlay = new kakao.maps.CustomOverlay({
+    position: new kakao.maps.LatLng(nwLat, nwLng),
+    content: wrapper,
+    xAnchor: 0,
+    yAnchor: 0,
+    zIndex: 2,
+  });
+
+  customOverlay.setMap(map);
 }
 
-function registerRadarTileset() {
-  removeRadarTileset();
-
-  kakao.maps.Tileset.add(
-    "USER_RADAR",
-    new kakao.maps.Tileset({
-      width: 256,
-      height: 256,
-      getTile: function (x, y, level) {
-        const proj = map.getProjection();
-
-        // 타일의 중심 픽셀 좌표 구하기
-        const centerPoint = new kakao.maps.Point(x * 256 + 128, y * 256 + 128);
-        const latLng = proj.coordsFromPoint(centerPoint);
-
-        // 카카오 레벨 -> 표준 OpenStreetMap 줌 레벨 변환
-        const z = 15 - level;
-        if (z < 2 || z > 18) return document.createElement("div");
-
-        // 표준 위경도 기준 RainViewer 타일 X, Y 정확하게 추출
-        const tile = latLngToTile(latLng.getLat(), latLng.getLng(), z);
-
-        const img = document.createElement("img");
-        img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tile.x}/${tile.y}/2/1_1.png`;
-        img.style.opacity = "0.6";
-        img.style.width = "256px";
-        img.style.height = "256px";
-
-        img.onerror = () => {
-          img.style.display = "none";
-        };
-
-        return img;
-      },
-    })
-  );
-
-  map.addOverlayMapTypeId(kakao.maps.MapTypeId.USER_RADAR);
-  isRadarAdded = true;
+function setupRadarEvents() {
+  kakao.maps.event.addListener(map, "idle", () => {
+    if (currentLayer === "precip") updateRadarOverlay();
+  });
 }

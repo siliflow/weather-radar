@@ -14,7 +14,7 @@ function loadKakaoSDK() {
 let map;
 let currentLayer = "precip";
 let radarFrame = null;
-let isRadarAdded = false;
+let canvasOverlay = null;
 
 // 대한민국 영역 제한
 const KOREA_BOUNDS = {
@@ -33,6 +33,7 @@ function initMap() {
 
   setupMapLimits();
   setupLayerButtons();
+  setupRadarEvents();
   switchLayer("precip");
 }
 
@@ -70,7 +71,7 @@ function setupLayerButtons() {
 
 function switchLayer(layer) {
   currentLayer = layer;
-  removeRadarTileset();
+  clearRadarOverlay();
 
   const statusTitle = document.getElementById("status-title");
   const statusValue = document.getElementById("status-value");
@@ -106,57 +107,67 @@ async function loadRadarLayer() {
       `관측시각 ${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ` +
       `${pad(t.getHours())}:${pad(t.getMinutes())} (RainViewer 기준)`;
 
-    registerRadarTileset();
+    drawRadarOnMap();
   } catch (err) {
     console.error(err);
     statusNote.textContent = "레이더 불러오기 실패.";
   }
 }
 
-function removeRadarTileset() {
-  if (isRadarAdded) {
-    map.removeOverlayMapTypeId(kakao.maps.MapTypeId.USER_RADAR);
-    isRadarAdded = false;
+function clearRadarOverlay() {
+  if (canvasOverlay) {
+    canvasOverlay.setMap(null);
+    canvasOverlay = null;
   }
 }
 
-function registerRadarTileset() {
-  removeRadarTileset();
+function drawRadarOnMap() {
+  if (!map || currentLayer !== "precip" || !radarFrame) return;
 
-  kakao.maps.Tileset.add(
-    "USER_RADAR",
-    new kakao.maps.Tileset({
-      width: 256,
-      height: 256,
-      getTile: function (x, y, level) {
-        // 카카오 투영 객체를 통한 좌표 정밀 계산
-        const proj = map.getProjection();
-        const point = new kakao.maps.Point(x * 256, y * 256);
-        const latLng = proj.coordsFromPoint(point);
+  const bounds = map.getBounds();
+  const sw = bounds.getSouthWest();
+  const ne = bounds.getNorthEast();
 
-        const z = 15 - level;
-        if (z < 2 || z > 18) return document.createElement("div");
+  // 현재 화면 범위에 맞춰 RainViewer Coverage 타일을 캔버스 오버레이로 그림
+  const zoom = Math.max(2, Math.min(15 - map.getLevel(), 8));
+  const center = map.getCenter();
+  const n = Math.pow(2, zoom);
 
-        const n = Math.pow(2, z);
-        const tileX = Math.floor(((latLng.getLng() + 180) / 360) * n);
-        const latRad = (latLng.getLat() * Math.PI) / 180;
-        const tileY = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
+  const tileX = Math.floor(((center.getLng() + 180) / 360) * n);
+  const latRad = (center.getLat() * Math.PI) / 180;
+  const tileY = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
 
-        const img = document.createElement("img");
-        img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tileX}/${tileY}/2/1_1.png`;
-        img.style.opacity = "0.65";
-        img.style.width = "256px";
-        img.style.height = "256px";
+  const canvas = document.createElement("canvas");
+  const mapContainer = document.getElementById("map");
+  canvas.width = mapContainer.clientWidth;
+  canvas.height = mapContainer.clientHeight;
+  canvas.style.pointerEvents = "none";
+  canvas.style.opacity = "0.7";
 
-        img.onerror = () => {
-          img.style.display = "none";
-        };
+  const ctx = canvas.getContext("2d");
+  const img = new Image();
+  img.crossOrigin = "Anonymous";
+  img.src = `${radarFrame.host}${radarFrame.path}/512/${zoom}/${tileX}/${tileY}/2/1_1.png`;
 
-        return img;
-      },
-    })
-  );
+  img.onload = () => {
+    clearRadarOverlay();
+    // 화면 전체 크기에 맞게 캔버스에 렌더링
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-  map.addOverlayMapTypeId(kakao.maps.MapTypeId.USER_RADAR);
-  isRadarAdded = true;
+    canvasOverlay = new kakao.maps.CustomOverlay({
+      position: center,
+      content: canvas,
+      xAnchor: 0.5,
+      yAnchor: 0.5,
+      zIndex: 2,
+    });
+
+    canvasOverlay.setMap(map);
+  };
+}
+
+function setupRadarEvents() {
+  kakao.maps.event.addListener(map, "idle", () => {
+    if (currentLayer === "precip") drawRadarOnMap();
+  });
 }

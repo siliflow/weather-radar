@@ -17,7 +17,7 @@ let currentLayer = "precip";
 function initMap() {
   const container = document.getElementById("map");
   map = new kakao.maps.Map(container, {
-    center: new kakao.maps.LatLng(36.5, 127.8), // 대한민국 중심 부근
+    center: new kakao.maps.LatLng(36.5, 127.8),
     level: 10,
   });
 
@@ -55,26 +55,22 @@ function switchLayer(layer) {
     statusTitle.textContent = "기온";
     statusValue.textContent = "준비 중";
     statusNote.textContent = "기온 레이어는 관측지점 데이터 연동이 필요합니다. (TODO)";
-    // TODO: 초단기실황(기온) API 연동 → 지점별 마커 또는 보간 히트맵
   } else if (layer === "air") {
     statusTitle.textContent = "대기질";
     statusValue.textContent = "준비 중";
     statusNote.textContent = "에어코리아(airkorea.or.kr) API 키 발급 후 연동 필요. (TODO)";
-    // TODO: 에어코리아 대기오염정보 API 연동
   } else if (layer === "wind") {
     statusTitle.textContent = "바람";
     statusValue.textContent = "준비 중";
     statusNote.textContent = "바람은 방향/풍속 데이터 + 화살표(또는 입자) 렌더링이 필요합니다. (TODO)";
-    // TODO: 바람 벡터 데이터 연동 및 시각화
   }
 }
 
 // ---------------------------------------------------------------
 // 강수량(레이더) 레이어 — RainViewer 타일 오버레이
-// (배경/범례 없는 투명 PNG 타일이라 애플 날씨 앱과 비슷한 느낌을 줌)
 // ---------------------------------------------------------------
-let radarFrame = null;      // { host, path } — RainViewer 최신 프레임 정보
-let radarTileEls = [];      // 현재 지도 위에 붙어있는 타일 <img> 요소들
+let radarFrame = null;
+let radarTileEls = [];
 
 async function loadRadarLayer() {
   const statusNote = document.getElementById("status-note");
@@ -102,7 +98,6 @@ async function loadRadarLayer() {
   }
 }
 
-// 위경도 <-> 슬리피맵(XYZ) 타일 좌표 변환 함수들
 function lonLatToTileXY(lon, lat, z) {
   const n = Math.pow(2, z);
   const x = ((lon + 180) / 360) * n;
@@ -124,9 +119,6 @@ function clearRadarTiles() {
   radarTileEls = [];
 }
 
-// 현재 지도 화면 범위에 필요한 타일들을 계산해서 새로 그림.
-// 각 타일은 kakao.maps.CustomOverlay로 붙여서, 드래그/이동 시 카카오맵이
-// 알아서 위치를 따라 옮겨주도록 함 (우리가 직접 픽셀 좌표를 계산할 필요 없음).
 function renderRadarTiles() {
   if (!map || currentLayer !== "precip" || !radarFrame) return;
   clearRadarTiles();
@@ -159,7 +151,6 @@ function renderRadarTiles() {
       const nw = tileXYToLonLat(tx, ty, z);
       const se = tileXYToLonLat(tx + 1, ty + 1, z);
 
-      // 현재 화면 배율에서 이 타일이 몇 픽셀 크기인지 계산 (오버레이 이미지 크기용)
       const p1 = proj.pointFromCoords(new kakao.maps.LatLng(nw.lat, nw.lon));
       const p2 = proj.pointFromCoords(new kakao.maps.LatLng(se.lat, se.lon));
       const width = Math.abs(p2.x - p1.x);
@@ -171,8 +162,9 @@ function renderRadarTiles() {
       img.style.width = `${width}px`;
       img.style.height = `${height}px`;
       img.style.display = "block";
-      img.style.opacity = "0.75";
+      img.style.opacity = "1";  // ← 0.75에서 1로 변경 (더 선명하게)
       img.style.pointerEvents = "none";
+      img.style.backgroundColor = "#0b1220"; // ← 빈틈을 배경색으로 채움
       img.onerror = () => { img.style.display = "none"; };
 
       const overlay = new kakao.maps.CustomOverlay({
@@ -193,8 +185,6 @@ function setupRadarTileSync() {
     if (currentLayer === "precip") renderRadarTiles();
   };
 
-  // CustomOverlay는 드래그(이동) 중엔 카카오맵이 알아서 위치를 따라 옮겨주므로
-  // 별도 처리가 필요 없음. 확대/축소로 필요한 타일 구성이 달라질 때만 다시 그림.
   kakao.maps.event.addListener(map, "zoom_start", clearRadarTiles);
   kakao.maps.event.addListener(map, "idle", rerender);
 

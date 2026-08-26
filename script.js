@@ -13,6 +13,9 @@ function loadKakaoSDK() {
 
 let map;
 let currentLayer = "precip";
+let radarFrame = null;
+let radarOverlay = null; // 단일 오버레이로 통합
+let tileImages = [];
 
 function initMap() {
   const container = document.getElementById("map");
@@ -41,7 +44,7 @@ function setupLayerButtons() {
 
 function switchLayer(layer) {
   currentLayer = layer;
-  clearRadarTiles();
+  clearRadarOverlay();
 
   const statusTitle = document.getElementById("status-title");
   const statusValue = document.getElementById("status-value");
@@ -67,11 +70,8 @@ function switchLayer(layer) {
 }
 
 // ---------------------------------------------------------------
-// 강수량(레이더) 레이어 — RainViewer 타일 오버레이
+// 새로운 방식: 단일 오버레이에 모든 타일을 그룹으로 추가
 // ---------------------------------------------------------------
-let radarFrame = null;
-let radarTileEls = [];
-
 async function loadRadarLayer() {
   const statusNote = document.getElementById("status-note");
   statusNote.textContent = "레이더 불러오는 중...";
@@ -114,14 +114,19 @@ function tileXYToLonLat(x, y, z) {
   return { lon, lat };
 }
 
-function clearRadarTiles() {
-  radarTileEls.forEach((overlay) => overlay.setMap(null));
-  radarTileEls = [];
+function clearRadarOverlay() {
+  if (radarOverlay) {
+    radarOverlay.setMap(null);
+    radarOverlay = null;
+  }
+  tileImages = [];
 }
 
+// ===== [핵심 개선] CustomOverlay를 단일 그룹으로 사용 =====
 function renderRadarTiles() {
-  if (!map || currentLayer !== "precip" || !radarFrame) return;
-  clearRadarTiles();
+  if (currentLayer !== "precip" || !radarFrame || !map) return;
+  
+  clearRadarOverlay();
 
   const mapEl = document.getElementById("map");
   const bounds = map.getBounds();
@@ -136,15 +141,30 @@ function renderRadarTiles() {
   const topLeft = lonLatToTileXY(sw.getLng(), ne.getLat(), z);
   const bottomRight = lonLatToTileXY(ne.getLng(), sw.getLat(), z);
 
-  const xStart = Math.floor(topLeft.x);
-  const xEnd = Math.floor(bottomRight.x);
-  const yStart = Math.floor(topLeft.y);
-  const yEnd = Math.floor(bottomRight.y);
+  // 화면보다 2배 더 넓은 범위의 타일을 미리 로드 (드래그 시 빈 공간 방지)
+  const padding = 2;
+  const xStart = Math.floor(topLeft.x) - padding;
+  const xEnd = Math.floor(bottomRight.x) + padding;
+  const yStart = Math.floor(topLeft.y) - padding;
+  const yEnd = Math.floor(bottomRight.y) + padding;
 
-  const MAX_TILES_PER_AXIS = 14;
-  if (xEnd - xStart + 1 > MAX_TILES_PER_AXIS || yEnd - yStart + 1 > MAX_TILES_PER_AXIS) return;
+  const MAX_TILES = 400;
+  if ((xEnd - xStart + 1) * (yEnd - yStart + 1) > MAX_TILES) return;
 
   const proj = map.getProjection();
+  
+  // 모든 타일을 담을 컨테이너 div 생성
+  const container = document.createElement('div');
+  container.style.position = 'absolute';
+  container.style.top = '0';
+  container.style.left = '0';
+  container.style.width = '100%';
+  container.style.height = '100%';
+  container.style.pointerEvents = 'none';
+  container.style.zIndex = '10';
+
+  let loadedCount = 0;
+  const totalTiles = (xEnd - xStart + 1) * (yEnd - yStart + 1);
 
   for (let tx = xStart; tx <= xEnd; tx++) {
     for (let ty = yStart; ty <= yEnd; ty++) {
@@ -155,41 +175,100 @@ function renderRadarTiles() {
       const p2 = proj.pointFromCoords(new kakao.maps.LatLng(se.lat, se.lon));
       const width = Math.abs(p2.x - p1.x);
       const height = Math.abs(p2.y - p1.y);
+      
       if (width < 1 || height < 1) continue;
 
+      // 각 타일을 img 태그로 생성
       const img = document.createElement("img");
       img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tx}/${ty}/2/1_1.png`;
+      img.style.position = 'absolute';
+      img.style.left = `${Math.min(p1.x, p2.x)}px`;
+      img.style.top = `${Math.min(p1.y, p2.y)}px`;
       img.style.width = `${width}px`;
       img.style.height = `${height}px`;
       img.style.display = "block";
-      img.style.opacity = "1";  // ← 0.75에서 1로 변경 (더 선명하게)
+      img.style.opacity = "0.8";
       img.style.pointerEvents = "none";
-      img.style.backgroundColor = "#0b1220"; // ← 빈틈을 배경색으로 채움
-      img.onerror = () => { img.style.display = "none"; };
+      img.style.backgroundColor = "transparent";
+      
+      // 이미지 로드 실패 시 투명하게
+      img.onerror = () => {
+        img.style.display = "none";
+        checkComplete();
+      };
+      
+      img.onload = checkComplete;
+      
+      function checkComplete() {
+        loadedCount++;
+        if (loadedCount >= totalTiles) {
+          const statusNote = document.getElementById("status-note");
+          if (statusNote && !statusNote.textContent.includes("✅")) {
+            statusNote.textContent += ` ✅ (${totalTiles}개 타일)`;
+          }
+        }
+      }
 
-      const overlay = new kakao.maps.CustomOverlay({
-        position: new kakao.maps.LatLng(nw.lat, nw.lon),
-        content: img,
-        xAnchor: 0,
-        yAnchor: 0,
-        zIndex: 10,
-      });
-      overlay.setMap(map);
-      radarTileEls.push(overlay);
+      container.appendChild(img);
+      tileImages.push(img);
     }
+  }
+
+  // CustomOverlay로 컨테이너 전체를 지도에 고정
+  radarOverlay = new kakao.maps.CustomOverlay({
+    position: new kakao.maps.LatLng(36.5, 127.8), // 한국 중심
+    content: container,
+    xAnchor: 0.5,
+    yAnchor: 0.5,
+    zIndex: 10,
+  });
+  
+  radarOverlay.setMap(map);
+
+  // 상태 표시
+  const statusNote = document.getElementById("status-note");
+  if (statusNote && !statusNote.textContent.includes("타일")) {
+    statusNote.textContent += ` (타일 ${tileImages.length}개 로드)`;
   }
 }
 
+// ===== [개선] 지도 이벤트 =====
 function setupRadarTileSync() {
-  const rerender = () => {
-    if (currentLayer === "precip") renderRadarTiles();
+  let renderTimeout = null;
+
+  const scheduleRender = () => {
+    if (renderTimeout) {
+      clearTimeout(renderTimeout);
+    }
+    renderTimeout = setTimeout(() => {
+      if (currentLayer === "precip") {
+        renderRadarTiles();
+      }
+      renderTimeout = null;
+    }, 50); // 50ms로 더 빠르게 반응
   };
 
-  kakao.maps.event.addListener(map, "zoom_start", clearRadarTiles);
-  kakao.maps.event.addListener(map, "idle", rerender);
+  // 지도 이동/확대 시 즉시 다시 그리기
+  kakao.maps.event.addListener(map, "idle", scheduleRender);
+  
+  // 줌 변경 시에도 다시 그리기
+  kakao.maps.event.addListener(map, "zoom_changed", () => {
+    clearRadarOverlay();
+    scheduleRender();
+  });
 
+  // 창 크기 변경
   window.addEventListener("resize", () => {
     map.relayout();
-    rerender();
+    scheduleRender();
   });
 }
+
+// ===== 수동 새로고침 =====
+function refreshRadar() {
+  radarFrame = null;
+  clearRadarOverlay();
+  loadRadarLayer();
+}
+
+console.log("🔄 레이더 새로고침: refreshRadar() 호출");

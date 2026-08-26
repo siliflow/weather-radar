@@ -123,36 +123,28 @@ function removeRadarTileset() {
 function registerRadarTileset() {
   removeRadarTileset();
 
-  // 카카오맵 Level -> Web Mercator Zoom(z) 정밀 변환
-  const getOsmXy = (x, y, level) => {
-    const proj = map.getProjection();
-    const pointNW = new kakao.maps.Point(x * 256, y * 256);
-    const latLng = proj.coordsFromPoint(pointNW);
-
-    const z = 15 - level;
-    if (z < 0 || z > 18) return null;
-
-    const n = Math.pow(2, z);
-    const tileX = Math.floor(((latLng.getLng() + 180) / 360) * n);
-    const latRad = (latLng.getLat() * Math.PI) / 180;
-    const tileY = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
-
-    return { tileX, tileY, z };
-  };
-
   kakao.maps.Tileset.add(
     "USER_RADAR",
     new kakao.maps.Tileset({
       width: 256,
       height: 256,
       getTile: function (x, y, level) {
-        const osm = getOsmXy(x, y, level);
-        if (!osm) return document.createElement("div");
+        // 카카오 투영 객체를 통한 좌표 정밀 계산
+        const proj = map.getProjection();
+        const point = new kakao.maps.Point(x * 256, y * 256);
+        const latLng = proj.coordsFromPoint(point);
+
+        const z = 15 - level;
+        if (z < 2 || z > 18) return document.createElement("div");
+
+        const n = Math.pow(2, z);
+        const tileX = Math.floor(((latLng.getLng() + 180) / 360) * n);
+        const latRad = (latLng.getLat() * Math.PI) / 180;
+        const tileY = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
 
         const img = document.createElement("img");
-        img.src = `${radarFrame.host}${radarFrame.path}/256/${osm.z}/${osm.tileX}/${osm.tileY}/2/1_1.png`;
+        img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tileX}/${tileY}/2/1_1.png`;
         img.style.opacity = "0.65";
-        img.style.display = "block";
         img.style.width = "256px";
         img.style.height = "256px";
 

@@ -7,11 +7,34 @@
   --accent: #38bdf8;
   --accent-dim: rgba(56, 189, 248, 0.15);
 }
-* { box-sizing: border-box; }
-html, body { margin: 0; padding: 0; height: 100%; font-family: "Pretendard", -apple-system, "Malgun Gothic", sans-serif; }
-#map { width: 100%; height: 100%; position: relative; overflow: hidden; }
 
-/* 상단 우측 레이어 토글 */
+/* ===== 초기화: 모든 여백 제거 ===== */
+* { 
+  box-sizing: border-box; 
+  margin: 0;
+  padding: 0;
+}
+
+html, body { 
+  width: 100%; 
+  height: 100%; 
+  margin: 0; 
+  padding: 0; 
+  overflow: hidden; /* 스크롤바 제거 */
+  font-family: "Pretendard", -apple-system, "Malgun Gothic", sans-serif;
+  background: var(--bg);
+}
+
+/* ===== 지도 컨테이너 ===== */
+#map { 
+  width: 100vw; 
+  height: 100vh; 
+  position: relative; 
+  overflow: hidden; 
+  background-color: var(--bg); /* ← 빈틈을 배경색으로 채움 */
+}
+
+/* ===== 상단 우측 레이어 토글 ===== */
 #layer-panel {
   position: absolute;
   top: 16px;
@@ -26,6 +49,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: "Pretendard", -ap
   gap: 4px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.35);
 }
+
 .layer-btn {
   appearance: none;
   border: none;
@@ -39,10 +63,18 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: "Pretendard", -ap
   transition: background 0.15s ease, color 0.15s ease;
   white-space: nowrap;
 }
-.layer-btn:hover { color: var(--text); background: rgba(148,163,184,0.08); }
-.layer-btn.active { color: var(--accent); background: var(--accent-dim); }
 
-/* 하단 상태/범례 바 */
+.layer-btn:hover { 
+  color: var(--text); 
+  background: rgba(148,163,184,0.08); 
+}
+
+.layer-btn.active { 
+  color: var(--accent); 
+  background: var(--accent-dim); 
+}
+
+/* ===== 하단 상태/범례 바 ===== */
 #status-bar {
   position: absolute;
   left: 16px;
@@ -58,10 +90,25 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: "Pretendard", -ap
   max-width: 260px;
   line-height: 1.5;
 }
-#status-bar .title { color: var(--muted); font-weight: 600; margin-bottom: 2px; }
-#status-bar .value { font-size: 14px; font-weight: 700; }
-#status-bar .note { color: var(--muted); margin-top: 6px; font-size: 11px; }
 
+#status-bar .title { 
+  color: var(--muted); 
+  font-weight: 600; 
+  margin-bottom: 2px; 
+}
+
+#status-bar .value { 
+  font-size: 14px; 
+  font-weight: 700; 
+}
+
+#status-bar .note { 
+  color: var(--muted); 
+  margin-top: 6px; 
+  font-size: 11px; 
+}
+
+/* ===== 설정 경고창 ===== */
 #setup-warning {
   position: absolute;
   inset: 0;
@@ -74,6 +121,7 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: "Pretendard", -ap
   padding: 24px;
   text-align: left;
 }
+
 #setup-warning .box {
   max-width: 480px;
   background: var(--panel);
@@ -81,7 +129,12 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: "Pretendard", -ap
   border-radius: 14px;
   padding: 24px;
 }
-#setup-warning h1 { font-size: 16px; margin: 0 0 12px; }
+
+#setup-warning h1 { 
+  font-size: 16px; 
+  margin: 0 0 12px; 
+}
+
 #setup-warning code {
   display: block;
   background: rgba(148,163,184,0.1);
@@ -92,4 +145,19 @@ html, body { margin: 0; padding: 0; height: 100%; font-family: "Pretendard", -ap
   color: var(--accent);
   word-break: break-all;
 }
-#setup-warning p { font-size: 13px; color: var(--muted); line-height: 1.6; }
+
+#setup-warning p { 
+  font-size: 13px; 
+  color: var(--muted); 
+  line-height: 1.6; 
+}
+
+/* ===== (중요) 레이더 타일이 빈틈 없이 채워지도록 ===== */
+#map .kakao-map {
+  background-color: var(--bg) !important;
+}
+
+/* CustomOverlay로 올라간 이미지들이 빈틈 없이 덮도록 */
+#map img[style*="display: block"] {
+  background-color: var(--bg);
+}

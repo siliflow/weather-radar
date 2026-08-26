@@ -8,33 +8,24 @@
   --accent-dim: rgba(56, 189, 248, 0.15);
 }
 
-/* ===== 초기화: 모든 여백 제거 ===== */
-* { 
-  box-sizing: border-box; 
-  margin: 0;
-  padding: 0;
-}
-
+* { box-sizing: border-box; }
 html, body { 
-  width: 100%; 
-  height: 100%; 
   margin: 0; 
   padding: 0; 
-  overflow: hidden; /* 스크롤바 제거 */
-  font-family: "Pretendard", -apple-system, "Malgun Gothic", sans-serif;
-  background: var(--bg);
+  height: 100%; 
+  overflow: hidden;
+  font-family: "Pretendard", -apple-system, "Malgun Gothic", sans-serif; 
 }
 
-/* ===== 지도 컨테이너 ===== */
 #map { 
-  width: 100vw; 
-  height: 100vh; 
+  width: 100%; 
+  height: 100%; 
   position: relative; 
   overflow: hidden; 
-  background-color: var(--bg); /* ← 빈틈을 배경색으로 채움 */
+  background-color: var(--bg); /* ← 빈 공간을 검은색으로 채움 */
 }
 
-/* ===== 상단 우측 레이어 토글 ===== */
+/* ===== 상단 레이어 패널 ===== */
 #layer-panel {
   position: absolute;
   top: 16px;
@@ -64,17 +55,10 @@ html, body {
   white-space: nowrap;
 }
 
-.layer-btn:hover { 
-  color: var(--text); 
-  background: rgba(148,163,184,0.08); 
-}
+.layer-btn:hover { color: var(--text); background: rgba(148,163,184,0.08); }
+.layer-btn.active { color: var(--accent); background: var(--accent-dim); }
 
-.layer-btn.active { 
-  color: var(--accent); 
-  background: var(--accent-dim); 
-}
-
-/* ===== 하단 상태/범례 바 ===== */
+/* ===== 하단 상태바 ===== */
 #status-bar {
   position: absolute;
   left: 16px;
@@ -87,26 +71,13 @@ html, body {
   padding: 10px 14px;
   color: var(--text);
   font-size: 12px;
-  max-width: 260px;
+  max-width: 340px;
   line-height: 1.5;
 }
 
-#status-bar .title { 
-  color: var(--muted); 
-  font-weight: 600; 
-  margin-bottom: 2px; 
-}
-
-#status-bar .value { 
-  font-size: 14px; 
-  font-weight: 700; 
-}
-
-#status-bar .note { 
-  color: var(--muted); 
-  margin-top: 6px; 
-  font-size: 11px; 
-}
+#status-bar .title { color: var(--muted); font-weight: 600; margin-bottom: 2px; }
+#status-bar .value { font-size: 14px; font-weight: 700; }
+#status-bar .note { color: var(--muted); margin-top: 6px; font-size: 11px; }
 
 /* ===== 설정 경고창 ===== */
 #setup-warning {
@@ -130,11 +101,7 @@ html, body {
   padding: 24px;
 }
 
-#setup-warning h1 { 
-  font-size: 16px; 
-  margin: 0 0 12px; 
-}
-
+#setup-warning h1 { font-size: 16px; margin: 0 0 12px; }
 #setup-warning code {
   display: block;
   background: rgba(148,163,184,0.1);
@@ -145,19 +112,4 @@ html, body {
   color: var(--accent);
   word-break: break-all;
 }
-
-#setup-warning p { 
-  font-size: 13px; 
-  color: var(--muted); 
-  line-height: 1.6; 
-}
-
-/* ===== (중요) 레이더 타일이 빈틈 없이 채워지도록 ===== */
-#map .kakao-map {
-  background-color: var(--bg) !important;
-}
-
-/* CustomOverlay로 올라간 이미지들이 빈틈 없이 덮도록 */
-#map img[style*="display: block"] {
-  background-color: var(--bg);
-}
+#setup-warning p { font-size: 13px; color: var(--muted); line-height: 1.6; }

@@ -129,17 +129,28 @@ function registerRadarTileset() {
       width: 256,
       height: 256,
       getTile: function (x, y, level) {
-        // 카카오 레벨 -> OpenStreetMap Zoom 변환
-        const z = 14 - level;
-        if (z < 1 || z > 15) return document.createElement("div");
+        // 1. 카카오맵 화면 픽셀 좌표를 위경도(WGS84)로 변환
+        const proj = map.getProjection();
+        const point = new kakao.maps.Point(x * 256, y * 256);
+        const latLng = proj.coordsFromPoint(point);
+
+        // 2. 카카오 Zoom Level -> 표준 OpenStreetMap Zoom(z) 변환
+        const z = 15 - level;
+        if (z < 2 || z > 18) return document.createElement("div");
+
+        // 3. 위경도를 RainViewer/OSM 타일 (tileX, tileY)로 정밀 계산
+        const n = Math.pow(2, z);
+        const tileX = Math.floor(((latLng.getLng() + 180) / 360) * n);
+        const latRad = (latLng.getLat() * Math.PI) / 180;
+        const tileY = Math.floor(((1 - Math.log(Math.tan(latRad) + 1 / Math.cos(latRad)) / Math.PI) / 2) * n);
 
         const img = document.createElement("img");
-        // RainViewer 타일 렌더링
-        img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${x}/${y}/2/1_1.png`;
+        img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${tileX}/${tileY}/2/1_1.png`;
         img.style.opacity = "0.6";
         img.style.width = "256px";
         img.style.height = "256px";
 
+        // 이미지 로드 실패(해당 영역에 레이더 데이터 없음) 시 빈 처리
         img.onerror = () => {
           img.style.display = "none";
         };

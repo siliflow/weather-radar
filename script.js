@@ -14,7 +14,7 @@ function loadKakaoSDK() {
 let map;
 let currentLayer = "precip";
 let radarFrame = null;
-let radarOverlay = null;
+let isRadarAdded = false;
 
 // 대한민국 영역 제한
 const KOREA_BOUNDS = {
@@ -33,7 +33,6 @@ function initMap() {
 
   setupMapLimits();
   setupLayerButtons();
-  setupRadarEvents();
   switchLayer("precip");
 }
 
@@ -71,7 +70,7 @@ function setupLayerButtons() {
 
 function switchLayer(layer) {
   currentLayer = layer;
-  clearRadarOverlay();
+  removeRadarTileset();
 
   const statusTitle = document.getElementById("status-title");
   const statusValue = document.getElementById("status-value");
@@ -107,86 +106,49 @@ async function loadRadarLayer() {
       `관측시각 ${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ` +
       `${pad(t.getHours())}:${pad(t.getMinutes())} (RainViewer 기준)`;
 
-    renderRadarCanvas();
+    registerRadarTileset();
   } catch (err) {
     console.error(err);
     statusNote.textContent = "레이더 불러오기 실패.";
   }
 }
 
-function clearRadarOverlay() {
-  if (radarOverlay) {
-    radarOverlay.setMap(null);
-    radarOverlay = null;
+function removeRadarTileset() {
+  if (isRadarAdded) {
+    map.removeOverlayMapTypeId(kakao.maps.MapTypeId.USER_RADAR);
+    isRadarAdded = false;
   }
 }
 
-// 화면 Bounding Box 기반 정밀 Canvas 오버레이
-function renderRadarCanvas() {
-  if (!map || currentLayer !== "precip" || !radarFrame) return;
+function registerRadarTileset() {
+  removeRadarTileset();
 
-  const bounds = map.getBounds();
-  const sw = bounds.getSouthWest();
-  const ne = bounds.getNorthEast();
+  kakao.maps.Tileset.add(
+    "USER_RADAR",
+    new kakao.maps.Tileset({
+      width: 256,
+      height: 256,
+      getTile: function (x, y, level) {
+        // 카카오 레벨 -> OpenStreetMap Zoom 변환
+        const z = 14 - level;
+        if (z < 1 || z > 15) return document.createElement("div");
 
-  // 카카오 레벨 -> 표준 줌 변환
-  const kakaoLevel = map.getLevel();
-  const zoom = Math.max(3, Math.min(15 - kakaoLevel, 9));
-  const n = Math.pow(2, zoom);
+        const img = document.createElement("img");
+        // RainViewer 타일 렌더링
+        img.src = `${radarFrame.host}${radarFrame.path}/256/${z}/${x}/${y}/2/1_1.png`;
+        img.style.opacity = "0.6";
+        img.style.width = "256px";
+        img.style.height = "256px";
 
-  // 화면 서/동/남/북 타일 범위 계산
-  const minTileX = Math.floor(((sw.getLng() + 180) / 360) * n);
-  const maxTileX = Math.floor(((ne.getLng() + 180) / 360) * n);
-  
-  const latRadNorth = (ne.getLat() * Math.PI) / 180;
-  const minTileY = Math.floor(((1 - Math.log(Math.tan(latRadNorth) + 1 / Math.cos(latRadNorth)) / Math.PI) / 2) * n);
-  
-  const latRadSouth = (sw.getLat() * Math.PI) / 180;
-  const maxTileY = Math.floor(((1 - Math.log(Math.tan(latRadSouth) + 1 / Math.cos(latRadSouth)) / Math.PI) / 2) * n);
+        img.onerror = () => {
+          img.style.display = "none";
+        };
 
-  const cols = maxTileX - minTileX + 1;
-  const rows = maxTileY - minTileY + 1;
+        return img;
+      },
+    })
+  );
 
-  const container = document.createElement("div");
-  container.style.display = "grid";
-  container.style.gridTemplateColumns = `repeat(${cols}, 256px)`;
-  container.style.gridTemplateRows = `repeat(${rows}, 256px)`;
-  container.style.width = `${cols * 256}px`;
-  container.style.height = `${rows * 256}px`;
-  container.style.pointerEvents = "none";
-  container.style.opacity = "0.65";
-
-  for (let ty = minTileY; ty <= maxTileY; ty++) {
-    for (let tx = minTileX; tx <= maxTileX; tx++) {
-      const img = document.createElement("img");
-      img.src = `${radarFrame.host}${radarFrame.path}/256/${zoom}/${tx}/${ty}/2/1_1.png`;
-      img.style.width = "256px";
-      img.style.height = "256px";
-      img.onerror = () => { img.style.visibility = "hidden"; };
-      container.appendChild(img);
-    }
-  }
-
-  // 타일 블록 영역의 정확한 북서쪽(Top-Left) 좌표 계산
-  const nwLng = (minTileX / n) * 360 - 180;
-  const nwLatRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * minTileY) / n)));
-  const nwLat = (nwLatRad * 180) / Math.PI;
-
-  clearRadarOverlay();
-
-  radarOverlay = new kakao.maps.CustomOverlay({
-    position: new kakao.maps.LatLng(nwLat, nwLng),
-    content: container,
-    xAnchor: 0,
-    yAnchor: 0,
-    zIndex: 2,
-  });
-
-  radarOverlay.setMap(map);
-}
-
-function setupRadarEvents() {
-  kakao.maps.event.addListener(map, "idle", () => {
-    if (currentLayer === "precip") renderRadarCanvas();
-  });
+  map.addOverlayMapTypeId(kakao.maps.MapTypeId.USER_RADAR);
+  isRadarAdded = true;
 }

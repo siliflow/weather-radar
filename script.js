@@ -10,7 +10,7 @@ const KOREA_BOUNDS = {
   maxLng: 132.0,
 };
 
-// Kakao SDK 로드 완료 후 실행
+// index.html에서 로드된 Kakao SDK 준비 완료 시 실행
 kakao.maps.load(() => {
   initMap();
 });

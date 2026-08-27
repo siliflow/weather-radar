@@ -1,10 +1,10 @@
-if (!CONFIG.KAKAO_JS_KEY || CONFIG.KAKAO_JS_KEY === "YOUR_KAKAO_JS_KEY") {
+
   document.getElementById("status-note").textContent = "카카오 API 키를 확인해주세요.";
 } else {
   loadKakaoSDK();
 }
 
-function loadKakaoSDK() {
+
   const script = document.createElement("script");
   script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_JS_KEY}&autoload=false`;
   script.onload = () => kakao.maps.load(initMap);

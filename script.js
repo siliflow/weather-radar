@@ -153,7 +153,7 @@ function renderRadarCanvas() {
   for (let ty = minTileY; ty <= maxTileY; ty++) {
     for (let tx = minTileX; tx <= maxTileX; tx++) {
       const img = document.createElement("img");
-      img.src = `${radarFrame.host}${radarFrame.path}/256/${zoom}/${tx}/${ty}/2/1_1.png`;
+      img.src = `${radarFrame.host}${radarFrame.path}/256/${zoom}/${tx}/${ty}/2/1_0.png`;
       img.style.position = "absolute";
       img.style.left = `${(tx - minTileX) * 256}px`;
       img.style.top = `${(ty - minTileY) * 256}px`;

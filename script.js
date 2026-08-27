@@ -10,7 +10,6 @@ const KOREA_BOUNDS = {
   maxLng: 132.0,
 };
 
-// index.html에서 로드된 Kakao SDK 준비 완료 시 실행
 kakao.maps.load(() => {
   initMap();
 });
@@ -123,10 +122,12 @@ function renderRadarCanvas() {
   const sw = bounds.getSouthWest();
   const ne = bounds.getNorthEast();
 
+  // 타일 계산을 위한 Zoom 레벨 산출 (OSM 줌레벨 매핑)
   const kakaoLevel = map.getLevel();
-  const zoom = Math.max(3, Math.min(15 - kakaoLevel, 8));
+  const zoom = Math.max(3, Math.min(15 - kakaoLevel, 7));
   const n = Math.pow(2, zoom);
 
+  // 현재 화면 영역에 해당하는 Tile X, Y 범위 구하기
   const minTileX = Math.floor(((sw.getLng() + 180) / 360) * n);
   const maxTileX = Math.floor(((ne.getLng() + 180) / 360) * n);
 
@@ -140,26 +141,28 @@ function renderRadarCanvas() {
   const rows = Math.max(1, maxTileY - minTileY + 1);
 
   const container = document.createElement("div");
-  container.style.position = "relative";
+  container.style.position = "absolute";
   container.style.width = `${cols * 256}px`;
   container.style.height = `${rows * 256}px`;
   container.style.pointerEvents = "none";
-  container.style.opacity = "0.65";
 
   for (let ty = minTileY; ty <= maxTileY; ty++) {
     for (let tx = minTileX; tx <= maxTileX; tx++) {
       const img = document.createElement("img");
-      img.src = `${radarFrame.host}${radarFrame.path}/256/${zoom}/${tx}/${ty}/2/1_0.png`;
+      // RainViewer 레이더 이미지 호출
+      img.src = `${radarFrame.host}${radarFrame.path}/256/${zoom}/${tx}/${ty}/2/1_1.png`;
       img.style.position = "absolute";
       img.style.left = `${(tx - minTileX) * 256}px`;
       img.style.top = `${(ty - minTileY) * 256}px`;
       img.style.width = "256px";
       img.style.height = "256px";
+      img.style.opacity = "0.6"; // 비구름 투명도 조정
       img.onerror = () => { img.style.display = "none"; };
       container.appendChild(img);
     }
   }
 
+  // 타일 시작점(북서쪽) 기준 위경도 좌표 변환
   const nwLng = (minTileX / n) * 360 - 180;
   const nwLatRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * minTileY) / n)));
   const nwLat = (nwLatRad * 180) / Math.PI;
@@ -171,13 +174,14 @@ function renderRadarCanvas() {
     content: container,
     xAnchor: 0,
     yAnchor: 0,
-    zIndex: 2,
+    zIndex: 3,
   });
 
   radarOverlay.setMap(map);
 }
 
 function setupRadarEvents() {
+  // 드래그나 확대/축소가 끝났을 때 타일 재계산
   kakao.maps.event.addListener(map, "idle", () => {
     if (currentLayer === "precip") renderRadarCanvas();
   });

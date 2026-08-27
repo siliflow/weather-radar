@@ -86,7 +86,7 @@ function switchLayer(layer) {
   }
 }
 
-// 기존 코드
+// 수정된 코드
 async function loadRadarLayer() {
   const statusNote = document.getElementById("status-note");
   statusNote.textContent = "레이더 불러오는 중...";
@@ -95,9 +95,16 @@ async function loadRadarLayer() {
     if (!radarFrame) {
       const res = await fetch("https://api.rainviewer.com/public/weather-maps.json");
       const json = await res.json();
+      
       const past = json.radar.past;
+      if (!past || past.length === 0) throw new Error("레이더 데이터 없음");
+      
       const latest = past[past.length - 1];
-      radarFrame = { host: json.host, path: latest.path, time: latest.time };
+      
+      // host 주소 끝의 '/' 중복 처리 방지
+      const host = json.host.endsWith('/') ? json.host.slice(0, -1) : json.host;
+      
+      radarFrame = { host: host, path: latest.path, time: latest.time };
     }
 
     const t = new Date(radarFrame.time * 1000);
@@ -110,13 +117,6 @@ async function loadRadarLayer() {
   } catch (err) {
     console.error(err);
     statusNote.textContent = "레이더 불러오기 실패.";
-  }
-}
-
-function removeRadar() {
-  if (radarOverlay) {
-    radarOverlay.setMap(null);
-    radarOverlay = null;
   }
 }
 

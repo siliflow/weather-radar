@@ -188,3 +188,4 @@ function setupRadarEvents() {
     if (currentLayer === "precip") renderRadarCanvas();
   });
 }
+kakao.maps.load(initMap);

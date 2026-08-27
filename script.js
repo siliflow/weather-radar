@@ -1,16 +1,22 @@
-
-  document.getElementById("status-note").textContent = "카카오 API 키를 확인해주세요.";
-} else {
+// ================================================
+// Kakao Maps SDK 동적 로드
+// ================================================
+if (typeof CONFIG !== "undefined" && CONFIG.KAKAO_JS_KEY) {
   loadKakaoSDK();
+} else {
+  console.error("CONFIG 객체 또는 KAKAO_JS_KEY를 찾을 수 없습니다.");
 }
 
-
+function loadKakaoSDK() {
   const script = document.createElement("script");
   script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_JS_KEY}&autoload=false`;
   script.onload = () => kakao.maps.load(initMap);
   document.head.appendChild(script);
 }
 
+// ================================================
+// 상태 및 변수 정의
+// ================================================
 let map;
 let currentLayer = "precip";
 let radarFrame = null;
@@ -23,6 +29,9 @@ const KOREA_BOUNDS = {
   maxLng: 132.0,
 };
 
+// ================================================
+// 지도 초기화 및 범위 제어
+// ================================================
 function initMap() {
   const container = document.getElementById("map");
   map = new kakao.maps.Map(container, {
@@ -57,6 +66,9 @@ function setupMapLimits() {
   kakao.maps.event.addListener(map, "zoom_changed", checkBounds);
 }
 
+// ================================================
+// UI 레이어 토글
+// ================================================
 function setupLayerButtons() {
   document.querySelectorAll(".layer-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -86,7 +98,9 @@ function switchLayer(layer) {
   }
 }
 
-// 수정된 코드
+// ================================================
+// RainViewer API 로드 및 렌더링
+// ================================================
 async function loadRadarLayer() {
   const statusNote = document.getElementById("status-note");
   statusNote.textContent = "레이더 불러오는 중...";
@@ -100,8 +114,6 @@ async function loadRadarLayer() {
       if (!past || past.length === 0) throw new Error("레이더 데이터 없음");
       
       const latest = past[past.length - 1];
-      
-      // host 주소 끝의 '/' 중복 처리 방지
       const host = json.host.endsWith('/') ? json.host.slice(0, -1) : json.host;
       
       radarFrame = { host: host, path: latest.path, time: latest.time };
@@ -120,6 +132,13 @@ async function loadRadarLayer() {
   }
 }
 
+function removeRadar() {
+  if (radarOverlay) {
+    radarOverlay.setMap(null);
+    radarOverlay = null;
+  }
+}
+
 function renderRadarCanvas() {
   if (!map || currentLayer !== "precip" || !radarFrame) return;
 
@@ -131,7 +150,6 @@ function renderRadarCanvas() {
   const zoom = Math.max(3, Math.min(15 - kakaoLevel, 8));
   const n = Math.pow(2, zoom);
 
-  // 화면 경계 타일 인덱스
   const minTileX = Math.floor(((sw.getLng() + 180) / 360) * n);
   const maxTileX = Math.floor(((ne.getLng() + 180) / 360) * n);
 
@@ -165,7 +183,6 @@ function renderRadarCanvas() {
     }
   }
 
-  // 타일 블록의 실제 북서쪽 위경도 계산
   const nwLng = (minTileX / n) * 360 - 180;
   const nwLatRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * minTileY) / n)));
   const nwLat = (nwLatRad * 180) / Math.PI;
@@ -188,4 +205,3 @@ function setupRadarEvents() {
     if (currentLayer === "precip") renderRadarCanvas();
   });
 }
-kakao.maps.load(initMap);

@@ -1,22 +1,3 @@
-// ================================================
-// Kakao Maps SDK 동적 로드
-// ================================================
-if (typeof CONFIG !== "undefined" && CONFIG.KAKAO_JS_KEY) {
-  loadKakaoSDK();
-} else {
-  console.error("CONFIG 객체 또는 KAKAO_JS_KEY를 찾을 수 없습니다.");
-}
-
-function loadKakaoSDK() {
-  const script = document.createElement("script");
-  script.src = `//dapi.kakao.com/v2/maps/sdk.js?appkey=${CONFIG.KAKAO_JS_KEY}&autoload=false`;
-  script.onload = () => kakao.maps.load(initMap);
-  document.head.appendChild(script);
-}
-
-// ================================================
-// 상태 및 변수 정의
-// ================================================
 let map;
 let currentLayer = "precip";
 let radarFrame = null;
@@ -29,9 +10,11 @@ const KOREA_BOUNDS = {
   maxLng: 132.0,
 };
 
-// ================================================
-// 지도 초기화 및 범위 제어
-// ================================================
+// Kakao SDK 로드 완료 후 실행
+kakao.maps.load(() => {
+  initMap();
+});
+
 function initMap() {
   const container = document.getElementById("map");
   map = new kakao.maps.Map(container, {
@@ -66,9 +49,6 @@ function setupMapLimits() {
   kakao.maps.event.addListener(map, "zoom_changed", checkBounds);
 }
 
-// ================================================
-// UI 레이어 토글
-// ================================================
 function setupLayerButtons() {
   document.querySelectorAll(".layer-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -98,9 +78,6 @@ function switchLayer(layer) {
   }
 }
 
-// ================================================
-// RainViewer API 로드 및 렌더링
-// ================================================
 async function loadRadarLayer() {
   const statusNote = document.getElementById("status-note");
   statusNote.textContent = "레이더 불러오는 중...";

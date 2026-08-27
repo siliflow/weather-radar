@@ -86,6 +86,7 @@ function switchLayer(layer) {
   }
 }
 
+// 기존 코드
 async function loadRadarLayer() {
   const statusNote = document.getElementById("status-note");
   statusNote.textContent = "레이더 불러오는 중...";

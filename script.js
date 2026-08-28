@@ -10,7 +10,7 @@ const KOREA_BOUNDS = {
   maxLng: 132.0,
 };
 
-// Kakao SDK 로드 후 실행
+// 카카오 SDK 로딩 완료 시 지도 생성
 kakao.maps.load(() => {
   initMap();
 });
@@ -123,12 +123,10 @@ function renderRadarCanvas() {
   const sw = bounds.getSouthWest();
   const ne = bounds.getNorthEast();
 
-  // Kakao 줌 레벨을 OSM 표준 타일 줌 레벨로 보정
   const kakaoLevel = map.getLevel();
   const zoom = Math.max(3, Math.min(15 - kakaoLevel, 8));
   const n = Math.pow(2, zoom);
 
-  // 현재 화면 범위 타일 인덱스 계산
   const minTileX = Math.floor(((sw.getLng() + 180) / 360) * n);
   const maxTileX = Math.floor(((ne.getLng() + 180) / 360) * n);
 
@@ -150,7 +148,6 @@ function renderRadarCanvas() {
   for (let ty = minTileY; ty <= maxTileY; ty++) {
     for (let tx = minTileX; tx <= maxTileX; tx++) {
       const img = document.createElement("img");
-      // RainViewer 최신 타일 이미지 규격 적용 (투명도 및 팔레트 지정)
       img.src = `${radarFrame.host}${radarFrame.path}/256/${zoom}/${tx}/${ty}/2/1_1.png`;
       img.style.position = "absolute";
       img.style.left = `${(tx - minTileX) * 256}px`;
@@ -163,7 +160,6 @@ function renderRadarCanvas() {
     }
   }
 
-  // 타일 묶음의 북서쪽 시작 좌표 변환
   const nwLng = (minTileX / n) * 360 - 180;
   const nwLatRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * minTileY) / n)));
   const nwLat = (nwLatRad * 180) / Math.PI;

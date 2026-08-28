@@ -1,31 +1,188 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>실시간 날씨 레이더</title>
-  <link rel="icon" href="data:,">
-  <link rel="stylesheet" href="style.css" />
-  <!-- Leaflet CSS & JS (타일 레이어 완벽 지원) -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-</head>
-<body>
-  <div id="map"></div>
+let map;
+let currentLayer = "precip";
+let radarFrame = null;
+let radarOverlay = null;
 
-  <div id="layer-panel">
-    <button class="layer-btn active" data-layer="precip">강수량</button>
-    <button class="layer-btn" data-layer="temp">기온</button>
-    <button class="layer-btn" data-layer="air">대기질</button>
-    <button class="layer-btn" data-layer="wind">바람</button>
-  </div>
+const KOREA_BOUNDS = {
+  minLat: 33.0,
+  maxLat: 38.9,
+  minLng: 124.0,
+  maxLng: 132.0,
+};
 
-  <div id="status-bar">
-    <div class="title" id="status-title">강수량 (레이더)</div>
-    <div class="value" id="status-value">RainViewer 실시간 강수 레이더</div>
-    <div class="note" id="status-note">불러오는 중...</div>
-  </div>
+// Kakao SDK 로드 후 실행
+kakao.maps.load(() => {
+  initMap();
+});
 
-  <script src="script.js"></script>
-</body>
-</html>
+function initMap() {
+  const container = document.getElementById("map");
+  map = new kakao.maps.Map(container, {
+    center: new kakao.maps.LatLng(36.2, 127.8),
+    level: 10,
+  });
+
+  setupMapLimits();
+  setupLayerButtons();
+  setupRadarEvents();
+  switchLayer("precip");
+}
+
+function setupMapLimits() {
+  map.setMaxLevel(12);
+
+  const checkBounds = () => {
+    const center = map.getCenter();
+    let lat = center.getLat();
+    let lng = center.getLng();
+    let moved = false;
+
+    if (lat < KOREA_BOUNDS.minLat) { lat = KOREA_BOUNDS.minLat; moved = true; }
+    if (lat > KOREA_BOUNDS.maxLat) { lat = KOREA_BOUNDS.maxLat; moved = true; }
+    if (lng < KOREA_BOUNDS.minLng) { lng = KOREA_BOUNDS.minLng; moved = true; }
+    if (lng > KOREA_BOUNDS.maxLng) { lng = KOREA_BOUNDS.maxLng; moved = true; }
+
+    if (moved) map.setCenter(new kakao.maps.LatLng(lat, lng));
+  };
+
+  kakao.maps.event.addListener(map, "dragend", checkBounds);
+  kakao.maps.event.addListener(map, "zoom_changed", checkBounds);
+}
+
+function setupLayerButtons() {
+  document.querySelectorAll(".layer-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".layer-btn").forEach((b) => b.classList.remove("active"));
+      btn.classList.add("active");
+      switchLayer(btn.dataset.layer);
+    });
+  });
+}
+
+function switchLayer(layer) {
+  currentLayer = layer;
+  removeRadar();
+
+  const statusTitle = document.getElementById("status-title");
+  const statusValue = document.getElementById("status-value");
+  const statusNote = document.getElementById("status-note");
+
+  if (layer === "precip") {
+    statusTitle.textContent = "강수량 (레이더)";
+    statusValue.textContent = "RainViewer 실시간 강수 레이더";
+    loadRadarLayer();
+  } else {
+    statusTitle.textContent = "준비 중";
+    statusValue.textContent = "준비 중인 레이어입니다.";
+    statusNote.textContent = "";
+  }
+}
+
+async function loadRadarLayer() {
+  const statusNote = document.getElementById("status-note");
+  statusNote.textContent = "레이더 불러오는 중...";
+
+  try {
+    if (!radarFrame) {
+      const res = await fetch("https://api.rainviewer.com/public/weather-maps.json");
+      const json = await res.json();
+      
+      const past = json.radar.past;
+      if (!past || past.length === 0) throw new Error("레이더 데이터 없음");
+      
+      const latest = past[past.length - 1];
+      const host = json.host.endsWith('/') ? json.host.slice(0, -1) : json.host;
+      
+      radarFrame = { host: host, path: latest.path, time: latest.time };
+    }
+
+    const t = new Date(radarFrame.time * 1000);
+    const pad = (n) => String(n).padStart(2, "0");
+    statusNote.textContent =
+      `관측시각 ${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ` +
+      `${pad(t.getHours())}:${pad(t.getMinutes())} (RainViewer 기준)`;
+
+    renderRadarCanvas();
+  } catch (err) {
+    console.error(err);
+    statusNote.textContent = "레이더 불러오기 실패.";
+  }
+}
+
+function removeRadar() {
+  if (radarOverlay) {
+    radarOverlay.setMap(null);
+    radarOverlay = null;
+  }
+}
+
+function renderRadarCanvas() {
+  if (!map || currentLayer !== "precip" || !radarFrame) return;
+
+  const bounds = map.getBounds();
+  const sw = bounds.getSouthWest();
+  const ne = bounds.getNorthEast();
+
+  // Kakao 줌 레벨을 OSM 표준 타일 줌 레벨로 보정
+  const kakaoLevel = map.getLevel();
+  const zoom = Math.max(3, Math.min(15 - kakaoLevel, 8));
+  const n = Math.pow(2, zoom);
+
+  // 현재 화면 범위 타일 인덱스 계산
+  const minTileX = Math.floor(((sw.getLng() + 180) / 360) * n);
+  const maxTileX = Math.floor(((ne.getLng() + 180) / 360) * n);
+
+  const latRadNorth = (ne.getLat() * Math.PI) / 180;
+  const minTileY = Math.floor(((1 - Math.log(Math.tan(latRadNorth) + 1 / Math.cos(latRadNorth)) / Math.PI) / 2) * n);
+
+  const latRadSouth = (sw.getLat() * Math.PI) / 180;
+  const maxTileY = Math.floor(((1 - Math.log(Math.tan(latRadSouth) + 1 / Math.cos(latRadSouth)) / Math.PI) / 2) * n);
+
+  const cols = Math.max(1, maxTileX - minTileX + 1);
+  const rows = Math.max(1, maxTileY - minTileY + 1);
+
+  const container = document.createElement("div");
+  container.style.position = "absolute";
+  container.style.width = `${cols * 256}px`;
+  container.style.height = `${rows * 256}px`;
+  container.style.pointerEvents = "none";
+
+  for (let ty = minTileY; ty <= maxTileY; ty++) {
+    for (let tx = minTileX; tx <= maxTileX; tx++) {
+      const img = document.createElement("img");
+      // RainViewer 최신 타일 이미지 규격 적용 (투명도 및 팔레트 지정)
+      img.src = `${radarFrame.host}${radarFrame.path}/256/${zoom}/${tx}/${ty}/2/1_1.png`;
+      img.style.position = "absolute";
+      img.style.left = `${(tx - minTileX) * 256}px`;
+      img.style.top = `${(ty - minTileY) * 256}px`;
+      img.style.width = "256px";
+      img.style.height = "256px";
+      img.style.opacity = "0.65";
+      img.onerror = () => { img.style.display = "none"; };
+      container.appendChild(img);
+    }
+  }
+
+  // 타일 묶음의 북서쪽 시작 좌표 변환
+  const nwLng = (minTileX / n) * 360 - 180;
+  const nwLatRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * minTileY) / n)));
+  const nwLat = (nwLatRad * 180) / Math.PI;
+
+  removeRadar();
+
+  radarOverlay = new kakao.maps.CustomOverlay({
+    position: new kakao.maps.LatLng(nwLat, nwLng),
+    content: container,
+    xAnchor: 0,
+    yAnchor: 0,
+    zIndex: 3,
+  });
+
+  radarOverlay.setMap(map);
+}
+
+function setupRadarEvents() {
+  kakao.maps.event.addListener(map, "idle", () => {
+    if (currentLayer === "precip") renderRadarCanvas();
+  });
+}

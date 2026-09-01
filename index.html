@@ -1,43 +1,32 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html>
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Leaflet 지도 적용 예시</title>
-
-  <!-- 1. Leaflet CSS 불러오기 -->
-  <link 
-    rel="stylesheet" 
-    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" 
-    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" 
-    crossorigin="" 
-  />
-
-  <style>
-    /* 페이지 전체 및 지도 사이즈 설정 */
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      padding: 20px;
-    }
-    h1 {
-      margin-bottom: 15px;
-      font-size: 20px;
-    }
-    /* 지도가 표시될 영역의 높이는 반드시 필요합니다 */
-    #map {
-      width: 100%;
-      height: 600px;
-      border-radius: 12px;
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-    }
-  </style>
+  <meta charset="utf-8">
+  <title>Leaflet Test</title>
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
 </head>
-<body>
+<body style="margin:0; padding:0;">
+
+  <!-- 지도 영역 (화면 전체 채우기) -->
+  <div id="map" style="width: 100vw; height: 100vh;"></div>
+
+  <!-- Leaflet JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+  <script>
+    // 지도 불러오기
+    var map = L.map('map').setView([37.5665, 126.9780], 13);
+
+    // 타일 연결
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19
+    }).addTo(map);
+
+    // 마커 표시
+    L.marker([37.5665, 126.9780]).addTo(map);
+  </script>
+</body>
+</html>
 
   <h1>Leaflet.js 지도 테스트</h1>
   

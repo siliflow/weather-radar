@@ -143,16 +143,30 @@ async function loadRadarLayer() {
 function buildFrameTrack() {
   const track = document.getElementById("frame-track");
   track.innerHTML = "";
-  radarLayers.forEach((_, i) => {
+  radarTimestamps.forEach((frame, i) => {
     const tick = document.createElement("button");
     tick.className = "frame-tick";
-    tick.setAttribute("aria-label", `프레임 ${i + 1}`);
+    const label = formatFrameTimeShort(i);
+    tick.setAttribute("aria-label", `${label} 프레임`);
+    tick.title = label;
     tick.addEventListener("click", () => {
       stopAnimation();
       showFrame(i);
     });
     track.appendChild(tick);
   });
+
+  document.getElementById("time-start").textContent = formatFrameTimeShort(0);
+  document.getElementById("time-end").textContent = formatFrameTimeShort(
+    radarTimestamps.length - 1
+  );
+}
+
+function formatFrameTimeShort(index) {
+  if (!radarTimestamps[index]) return "--:--";
+  const t = new Date(radarTimestamps[index].time * 1000);
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(t.getHours())}:${pad(t.getMinutes())}`;
 }
 
 function showFrame(index) {

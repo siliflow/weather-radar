@@ -200,7 +200,7 @@ html, body {
 /* 프레임 스크러버 / 재생 */
 #playback {
   display: none;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
 }
 #playback.visible { display: flex; }
@@ -220,17 +220,33 @@ html, body {
   align-items: center;
   justify-content: center;
   transition: background 0.15s ease;
+  margin-top: 2px;
 }
 .play-btn:hover { background: rgba(91, 155, 213, 0.28); }
 
-#frame-track {
+#timeline {
   flex: 1 1 auto;
+  min-width: 0;
+}
+
+#frame-track {
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   gap: 3px;
   overflow-x: auto;
-  padding: 4px 0;
+  padding: 4px 0 6px;
+  border-bottom: 1px solid var(--line);
 }
+
+.frame-times {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 5px;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--muted-dim);
+}
+.frame-times .now { color: var(--live); }
 .frame-tick {
   appearance: none;
   border: none;

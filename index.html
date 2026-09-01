@@ -3,30 +3,68 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>실시간 강수 레이더 대시보드</title>
+  <title>기상 레이더</title>
 
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-  <div id="map"></div>
+  <div id="app">
+    <div id="map"></div>
 
-  <div id="layer-panel">
-    <button class="layer-btn active" data-layer="precip">강수량</button>
-    <button class="layer-btn" data-layer="temp">기온</button>
-    <button class="layer-btn" data-layer="air">대기질</button>
-    <button class="layer-btn" data-layer="wind">바람</button>
-  </div>
+    <aside id="dock">
+      <div class="brand">
+        <span class="dot"></span>
+        <span class="wordmark">기상 레이더</span>
+      </div>
 
-  <div id="status-bar">
-    <div class="title" id="status-title">강수량 (레이더)</div>
-    <div class="value" id="status-value">RainViewer 실시간 강수 레이더</div>
-    <div class="note" id="status-note">불러오는 중...</div>
-    <div id="radar-controls" class="visible">
-      <button id="playBtn" class="radar-btn">⏸</button>
-      <span class="radar-time">레이더 애니메이션 재생 중</span>
-    </div>
+      <div class="dock-section">
+        <nav id="layer-nav">
+          <button class="layer-item active" data-layer="precip">
+            강수량 <span class="tag">RADAR</span>
+          </button>
+          <button class="layer-item" data-layer="temp">
+            기온 <span class="tag">SOON</span>
+          </button>
+          <button class="layer-item" data-layer="air">
+            대기질 <span class="tag">SOON</span>
+          </button>
+          <button class="layer-item" data-layer="wind">
+            바람 <span class="tag">SOON</span>
+          </button>
+        </nav>
+      </div>
+
+      <div class="dock-section" id="status">
+        <div class="status-title" id="status-title">강수량</div>
+        <div class="status-readout">
+          <span class="live-dot" id="live-dot"></span>
+          <span id="status-readout-text">불러오는 중...</span>
+        </div>
+        <div class="status-time" id="status-time"></div>
+      </div>
+
+      <div class="dock-section" id="legend">
+        <div class="legend-label">강수 강도</div>
+        <div class="legend-bar"></div>
+        <div class="legend-ticks">
+          <span>약함</span>
+          <span>보통</span>
+          <span>강함</span>
+        </div>
+      </div>
+
+      <div class="dock-section" id="playback">
+        <button id="playBtn" class="play-btn">⏸</button>
+        <div id="frame-track"></div>
+      </div>
+
+      <div id="attribution">
+        지도 OpenStreetMap · CARTO<br>
+        레이더 RainViewer
+      </div>
+    </aside>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>

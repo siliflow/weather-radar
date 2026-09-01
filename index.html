@@ -5,202 +5,31 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>실시간 강수 레이더 대시보드</title>
 
-  <!-- Leaflet CSS -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
-
-  <style>
-    /* 기본 페이지 스타일 */
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body, html { width: 100%; height: 100%; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-
-    /* 1. 지도가 맨 밑 배경으로 전체 화면에 깔림 */
-    #map {
-      width: 100vw; height: 100vh;
-      position: fixed; top: 0; left: 0;
-      z-index: 1; /* 가장 낮은 레이어 */
-    }
-
-    /* 2. 지도 위에 얹어질 UI 요소들 (z-index: 1000 이상) */
-    
-    /* 좌상단 헤더 정보 패널 (스크린샷 스타일) */
-    .top-info-panel {
-      position: fixed; top: 20px; left: 20px;
-      z-index: 1000;
-      pointer-events: none; /* 클릭 투과 (내부 버튼만 클릭 가능하게 설정) */
-    }
-
-    .info-box {
-      background: rgba(30, 30, 30, 0.95); /* 검은색 배경 */
-      color: white; padding: 16px 20px; border-radius: 12px;
-      box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-      pointer-events: auto; /* 내부 요소는 클릭 가능 */
-      width: 320px;
-    }
-
-    .info-title { font-size: 14px; color: #aaa; margin-bottom: 4px; }
-    .info-status { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 8px; }
-    .info-timestamp { font-size: 13px; color: #ccc; font-family: monospace; }
-
-    /* 우상단 메뉴 버튼들 (스크린샷 스타일) */
-    .menu-buttons {
-      position: fixed; top: 20px; right: 20px;
-      z-index: 1000; display: flex; gap: 8px;
-    }
-
-    .menu-btn {
-      background: #007aff; /* 파란색 배경 */
-      color: white; border: none; padding: 10px 18px; border-radius: 8px;
-      cursor: pointer; font-size: 15px; font-weight: 600;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.15);
-      transition: background 0.2s;
-    }
-
-    .menu-btn:hover { background: #0056b3; }
-    .menu-btn.active { background: #004494; box-shadow: inset 0 2px 5px rgba(0,0,0,0.2); } /* 활성화 버튼 */
-
-    /* 재생/일시정지 컨트롤러 패널 (추가 기능) */
-    .radar-control-panel {
-      position: fixed; bottom: 30px; left: 50%;
-      transform: translateX(-50%); z-index: 1000;
-      background: rgba(20, 20, 20, 0.9); backdrop-filter: blur(8px);
-      color: white; padding: 12px 24px; border-radius: 30px;
-      display: flex; align-items: center; gap: 15px;
-      box-shadow: 0 8px 25px rgba(0,0,0,0.3);
-    }
-
-    .radar-btn {
-      background: #007aff; color: white; border: none; padding: 8px 16px; border-radius: 20px;
-      cursor: pointer; font-weight: bold; transition: background 0.2s;
-    }
-
-    .radar-btn:hover { background: #0056b3; }
-    .radar-time-label { font-size: 14px; font-family: monospace; min-width: 140px; text-align: center; color: #ccc; }
-  </style>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
 
-  <!-- UI 요소 (지도 위에 플로팅) -->
-  <div class="top-info-panel">
-    <div class="info-box">
-      <div class="info-title">강수량 (레이더)</div>
-      <div id="infoStatus" class="info-status">실시간 강수 레이더 불러오는 중...</div>
-      <div id="infoTimestamp" class="info-timestamp"></div>
+  <div id="map"></div>
+
+  <div id="layer-panel">
+    <button class="layer-btn active" data-layer="precip">강수량</button>
+    <button class="layer-btn" data-layer="temp">기온</button>
+    <button class="layer-btn" data-layer="air">대기질</button>
+    <button class="layer-btn" data-layer="wind">바람</button>
+  </div>
+
+  <div id="status-bar">
+    <div class="title" id="status-title">강수량 (레이더)</div>
+    <div class="value" id="status-value">RainViewer 실시간 강수 레이더</div>
+    <div class="note" id="status-note">불러오는 중...</div>
+    <div id="radar-controls" class="visible">
+      <button id="playBtn" class="radar-btn">⏸</button>
+      <span class="radar-time">레이더 애니메이션 재생 중</span>
     </div>
   </div>
 
-  <div class="menu-buttons">
-    <button class="menu-btn active">강수량</button>
-    <button class="menu-btn">기온</button>
-    <button class="menu-btn">대기질</button>
-    <button class="menu-btn">바람</button>
-  </div>
-
-  <!-- 레이더 재생 컨트롤러 -->
-  <div class="radar-control-panel">
-    <button id="playBtn" class="radar-btn">⏸ 일시정지</button>
-    <span id="radarTimeLabel" class="radar-time-label">레이더 로딩 중...</span>
-  </div>
-
-  <!-- 전체 화면 Leaflet 지도 컨테이너 -->
-  <div id="map"></div>
-
-  <!-- Leaflet JS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-
-  <script>
-    // 1. Leaflet 지도 초기화 (한국 중심)
-    const map = L.map('map', { zoomControl: false /* 줌 버튼 숨김 */ }).setView([36.5, 127.8], 7);
-
-    // Zoom 컨트롤 버튼 위치 조정 (우하단)
-    L.control.zoom({ position: 'bottomright' }).addTo(map);
-
-    // 2. 기본 배경 지도 타일 (OpenStreetMap 기본)
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 18, attribution: '&copy; <a href="http://www.openstreetmap.org/copyright">OSM</a>'
-    }).addTo(map);
-
-    // 3. RainViewer API를 활용한 실시간 기상 레이더 레이어 연동
-    let radarLayers = [];
-    let radarTimestamps = [];
-    let currentIndex = 0;
-    let animationInterval = null;
-
-    // UI 요소 참조
-    const infoStatus = document.getElementById('infoStatus');
-    const infoTimestamp = document.getElementById('infoTimestamp');
-    const playBtn = document.getElementById('playBtn');
-    const radarTimeLabel = document.getElementById('radarTimeLabel');
-
-    // RainViewer API에서 최신 기상 레이더 타임스탬프 데이터 가져오기
-    fetch('https://api.rainviewer.com/public/weather-maps.json')
-      .then(res => res.json())
-      .then(data => {
-        // 과거~현재 실시간 레이더 프레임 목록 (radar.past)
-        radarTimestamps = data.radar.past;
-        
-        // 각 타임스탬프별 Leaflet 타일 레이어 생성 (미리 로드하여 준비)
-        radarTimestamps.forEach((item, idx) => {
-          const tileUrl = `${data.host}${item.path}/256/{z}/{x}/{y}/2/1_1.png`;
-          const layer = L.tileLayer(tileUrl, {
-            opacity: 0, // 기본적으로 숨김 처리
-            maxZoom: 18, zIndex: 100 // 지도 타일보다 위에 올라오도록 설정
-          }).addTo(map);
-
-          radarLayers.push(layer);
-        });
-
-        // 4. 애니메이션 시작 (최신 프레임 표시)
-        if (radarLayers.length > 0) {
-          showFrame(radarLayers.length - 1); // 가장 최근 레이더 표시
-          startAnimation();
-          infoStatus.innerText = 'RainViewer 실시간 강수 레이더'; // 로딩 완료로 UI 업데이트
-        }
-      })
-      .catch(err => {
-        console.error("레이더 데이터를 불러오지 못했습니다:", err);
-        infoStatus.innerText = "레이더 로딩 실패";
-        infoStatus.style.color = '#ff453a'; // 빨간색으로 경고
-        radarTimeLabel.innerText = "데이터 오류";
-      });
-
-    // 특정 프레임의 레이더만 불투명도(opacity)를 높여 보여주는 함수
-    function showFrame(index) {
-      radarLayers.forEach((layer, i) => {
-        if (i === index) {
-          layer.setOpacity(0.65); // 레이더 투명도 조절 (0.6 ~ 0.7 적당)
-        } else {
-          layer.setOpacity(0);
-        }
-      });
-
-      // 레이더 시간 표시 (UTC -> 한국 시각 변환)
-      const date = new Date(radarTimestamps[index].time * 1000);
-      const timeStr = date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' });
-      radarTimeLabel.innerText = `시간: ${timeStr}`;
-      infoTimestamp.innerText = date.toLocaleString('ko-KR', { hour12: false });
-      currentIndex = index;
-    }
-
-    // 재생 애니메이션 함수
-    function startAnimation() {
-      if (animationInterval) clearInterval(animationInterval);
-      animationInterval = setInterval(() => {
-        const nextIndex = (currentIndex + 1) % radarLayers.length;
-        showFrame(nextIndex);
-      }, 700); // 0.7초마다 다음 레이더 프레임 전환
-    }
-
-    // 재생/일시정지 버튼 클릭 이벤트
-    playBtn.addEventListener('click', () => {
-      if (animationInterval) {
-        clearInterval(animationInterval);
-        animationInterval = null;
-        playBtn.innerText = '▶ 재생';
-      } else {
-        startAnimation();
-        playBtn.innerText = '⏸ 일시정지';
-      }
-    });
-  </script>
+  <script src="script.js"></script>
 </body>
 </html>

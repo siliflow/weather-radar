@@ -1,184 +1,180 @@
 let map;
 let currentLayer = "precip";
-let radarFrame = null;
-let radarOverlay = null;
 
-const KOREA_BOUNDS = {
-  minLat: 33.0,
-  maxLat: 38.9,
-  minLng: 124.0,
-  maxLng: 132.0,
+let radarLayers = [];
+let radarTimestamps = [];
+let currentFrameIndex = 0;
+let animationInterval = null;
+let radarLoaded = false;
+
+const KOREA_BOUNDS = L.latLngBounds(
+  L.latLng(33.0, 124.0),
+  L.latLng(38.9, 132.0)
+);
+
+const LAYER_INFO = {
+  precip: { title: "강수량 (레이더)", value: "RainViewer 실시간 강수 레이더" },
+  temp: { title: "기온", value: "준비 중인 레이어입니다." },
+  air: { title: "대기질", value: "준비 중인 레이어입니다." },
+  wind: { title: "바람", value: "준비 중인 레이어입니다." },
 };
 
-// 카카오 SDK 로딩 완료 시 지도 생성
-kakao.maps.load(() => {
+document.addEventListener("DOMContentLoaded", () => {
   initMap();
+  setupLayerButtons();
+  switchLayer("precip");
 });
 
 function initMap() {
-  const container = document.getElementById("map");
-  map = new kakao.maps.Map(container, {
-    center: new kakao.maps.LatLng(36.2, 127.8),
-    level: 10,
-  });
+  map = L.map("map", {
+    zoomControl: false,
+    minZoom: 6,
+    maxZoom: 18,
+    maxBounds: KOREA_BOUNDS.pad(0.15),
+    maxBoundsViscosity: 1.0,
+  }).setView([36.2, 127.8], 7);
 
-  setupMapLimits();
-  setupLayerButtons();
-  setupRadarEvents();
-  switchLayer("precip");
-}
+  L.control.zoom({ position: "bottomright" }).addTo(map);
 
-function setupMapLimits() {
-  map.setMaxLevel(12);
-
-  const checkBounds = () => {
-    const center = map.getCenter();
-    let lat = center.getLat();
-    let lng = center.getLng();
-    let moved = false;
-
-    if (lat < KOREA_BOUNDS.minLat) { lat = KOREA_BOUNDS.minLat; moved = true; }
-    if (lat > KOREA_BOUNDS.maxLat) { lat = KOREA_BOUNDS.maxLat; moved = true; }
-    if (lng < KOREA_BOUNDS.minLng) { lng = KOREA_BOUNDS.minLng; moved = true; }
-    if (lng > KOREA_BOUNDS.maxLng) { lng = KOREA_BOUNDS.maxLng; moved = true; }
-
-    if (moved) map.setCenter(new kakao.maps.LatLng(lat, lng));
-  };
-
-  kakao.maps.event.addListener(map, "dragend", checkBounds);
-  kakao.maps.event.addListener(map, "zoom_changed", checkBounds);
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    maxZoom: 18,
+    attribution:
+      '&copy; <a href="http://www.openstreetmap.org/copyright">OSM</a>',
+  }).addTo(map);
 }
 
 function setupLayerButtons() {
   document.querySelectorAll(".layer-btn").forEach((btn) => {
     btn.addEventListener("click", () => {
-      document.querySelectorAll(".layer-btn").forEach((b) => b.classList.remove("active"));
+      document
+        .querySelectorAll(".layer-btn")
+        .forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       switchLayer(btn.dataset.layer);
     });
+  });
+
+  document.getElementById("playBtn").addEventListener("click", () => {
+    if (animationInterval) {
+      stopAnimation();
+    } else {
+      startAnimation();
+    }
   });
 }
 
 function switchLayer(layer) {
   currentLayer = layer;
-  removeRadar();
 
   const statusTitle = document.getElementById("status-title");
   const statusValue = document.getElementById("status-value");
   const statusNote = document.getElementById("status-note");
+  const radarControls = document.getElementById("radar-controls");
+
+  const info = LAYER_INFO[layer];
+  statusTitle.textContent = info.title;
+  statusValue.textContent = info.value;
 
   if (layer === "precip") {
-    statusTitle.textContent = "강수량 (레이더)";
-    statusValue.textContent = "RainViewer 실시간 강수 레이더";
-    loadRadarLayer();
+    radarControls.classList.add("visible");
+    if (radarLoaded) {
+      showRadarLayers();
+      statusNote.textContent = formatFrameTime(currentFrameIndex);
+      startAnimation();
+    } else {
+      statusNote.textContent = "레이더 불러오는 중...";
+      loadRadarLayer();
+    }
   } else {
-    statusTitle.textContent = "준비 중";
-    statusValue.textContent = "준비 중인 레이어입니다.";
+    radarControls.classList.remove("visible");
     statusNote.textContent = "";
+    hideRadarLayers();
+    stopAnimation();
   }
 }
 
 async function loadRadarLayer() {
   const statusNote = document.getElementById("status-note");
-  statusNote.textContent = "레이더 불러오는 중...";
 
   try {
-    if (!radarFrame) {
-      const res = await fetch("https://api.rainviewer.com/public/weather-maps.json");
-      const json = await res.json();
-      
-      const past = json.radar.past;
-      if (!past || past.length === 0) throw new Error("레이더 데이터 없음");
-      
-      const latest = past[past.length - 1];
-      const host = json.host.endsWith('/') ? json.host.slice(0, -1) : json.host;
-      
-      radarFrame = { host: host, path: latest.path, time: latest.time };
+    const res = await fetch(
+      "https://api.rainviewer.com/public/weather-maps.json"
+    );
+    const data = await res.json();
+
+    const past = data.radar.past;
+    if (!past || past.length === 0) throw new Error("레이더 데이터 없음");
+
+    radarTimestamps = past;
+
+    radarLayers = past.map((frame) => {
+      const tileUrl = `${data.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`;
+      return L.tileLayer(tileUrl, {
+        opacity: 0,
+        maxZoom: 18,
+        zIndex: 100,
+      }).addTo(map);
+    });
+
+    radarLoaded = true;
+    showFrame(radarLayers.length - 1);
+
+    if (currentLayer === "precip") {
+      startAnimation();
     }
-
-    const t = new Date(radarFrame.time * 1000);
-    const pad = (n) => String(n).padStart(2, "0");
-    statusNote.textContent =
-      `관측시각 ${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ` +
-      `${pad(t.getHours())}:${pad(t.getMinutes())} (RainViewer 기준)`;
-
-    renderRadarCanvas();
   } catch (err) {
     console.error(err);
     statusNote.textContent = "레이더 불러오기 실패.";
   }
 }
 
-function removeRadar() {
-  if (radarOverlay) {
-    radarOverlay.setMap(null);
-    radarOverlay = null;
+function showFrame(index) {
+  if (!radarLayers.length) return;
+
+  radarLayers.forEach((layer, i) => {
+    layer.setOpacity(i === index ? 0.65 : 0);
+  });
+
+  currentFrameIndex = index;
+
+  if (currentLayer === "precip") {
+    document.getElementById("status-note").textContent =
+      formatFrameTime(index);
   }
 }
 
-function renderRadarCanvas() {
-  if (!map || currentLayer !== "precip" || !radarFrame) return;
-
-  const bounds = map.getBounds();
-  const sw = bounds.getSouthWest();
-  const ne = bounds.getNorthEast();
-
-  const kakaoLevel = map.getLevel();
-  const zoom = Math.max(3, Math.min(15 - kakaoLevel, 8));
-  const n = Math.pow(2, zoom);
-
-  const minTileX = Math.floor(((sw.getLng() + 180) / 360) * n);
-  const maxTileX = Math.floor(((ne.getLng() + 180) / 360) * n);
-
-  const latRadNorth = (ne.getLat() * Math.PI) / 180;
-  const minTileY = Math.floor(((1 - Math.log(Math.tan(latRadNorth) + 1 / Math.cos(latRadNorth)) / Math.PI) / 2) * n);
-
-  const latRadSouth = (sw.getLat() * Math.PI) / 180;
-  const maxTileY = Math.floor(((1 - Math.log(Math.tan(latRadSouth) + 1 / Math.cos(latRadSouth)) / Math.PI) / 2) * n);
-
-  const cols = Math.max(1, maxTileX - minTileX + 1);
-  const rows = Math.max(1, maxTileY - minTileY + 1);
-
-  const container = document.createElement("div");
-  container.style.position = "absolute";
-  container.style.width = `${cols * 256}px`;
-  container.style.height = `${rows * 256}px`;
-  container.style.pointerEvents = "none";
-
-  for (let ty = minTileY; ty <= maxTileY; ty++) {
-    for (let tx = minTileX; tx <= maxTileX; tx++) {
-      const img = document.createElement("img");
-      img.src = `${radarFrame.host}${radarFrame.path}/256/${zoom}/${tx}/${ty}/2/1_1.png`;
-      img.style.position = "absolute";
-      img.style.left = `${(tx - minTileX) * 256}px`;
-      img.style.top = `${(ty - minTileY) * 256}px`;
-      img.style.width = "256px";
-      img.style.height = "256px";
-      img.style.opacity = "0.65";
-      img.onerror = () => { img.style.display = "none"; };
-      container.appendChild(img);
-    }
-  }
-
-  const nwLng = (minTileX / n) * 360 - 180;
-  const nwLatRad = Math.atan(Math.sinh(Math.PI * (1 - (2 * minTileY) / n)));
-  const nwLat = (nwLatRad * 180) / Math.PI;
-
-  removeRadar();
-
-  radarOverlay = new kakao.maps.CustomOverlay({
-    position: new kakao.maps.LatLng(nwLat, nwLng),
-    content: container,
-    xAnchor: 0,
-    yAnchor: 0,
-    zIndex: 3,
-  });
-
-  radarOverlay.setMap(map);
+function formatFrameTime(index) {
+  if (!radarTimestamps[index]) return "";
+  const t = new Date(radarTimestamps[index].time * 1000);
+  const pad = (n) => String(n).padStart(2, "0");
+  return (
+    `관측시각 ${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())} ` +
+    `${pad(t.getHours())}:${pad(t.getMinutes())} (RainViewer 기준)`
+  );
 }
 
-function setupRadarEvents() {
-  kakao.maps.event.addListener(map, "idle", () => {
-    if (currentLayer === "precip") renderRadarCanvas();
-  });
+function showRadarLayers() {
+  if (radarLayers.length) showFrame(currentFrameIndex);
+}
+
+function hideRadarLayers() {
+  radarLayers.forEach((layer) => layer.setOpacity(0));
+}
+
+function startAnimation() {
+  if (!radarLayers.length) return;
+  stopAnimation();
+  document.getElementById("playBtn").textContent = "⏸";
+  animationInterval = setInterval(() => {
+    const nextIndex = (currentFrameIndex + 1) % radarLayers.length;
+    showFrame(nextIndex);
+  }, 700);
+}
+
+function stopAnimation() {
+  if (animationInterval) {
+    clearInterval(animationInterval);
+    animationInterval = null;
+  }
+  document.getElementById("playBtn").textContent = "▶";
 }

@@ -55,22 +55,36 @@
         </div>
       </div>
 
-      <div class="dock-section" id="playback">
-        <button id="playBtn" class="play-btn">⏸</button>
-        <div id="timeline">
-          <div id="frame-track"></div>
-          <div class="frame-times">
-            <span id="time-start">--:--</span>
-            <span id="time-end" class="now">--:--</span>
-          </div>
-        </div>
-      </div>
-
       <div id="attribution">
         지도 OpenStreetMap · CARTO<br>
         레이더 RainViewer
       </div>
     </aside>
+
+    <div id="radar-bar" class="visible">
+      <button id="playBtn" class="rb-play">⏸</button>
+
+      <div class="rb-info">
+        <div class="rb-title">강수 레이더</div>
+        <div class="rb-date" id="rb-date">--</div>
+      </div>
+
+      <div class="rb-range" id="rb-range">
+        <button class="rb-range-btn" data-range="1h">1시간</button>
+        <button class="rb-range-btn active" data-range="all">전체</button>
+      </div>
+
+      <div class="rb-progress" id="rb-progress">
+        <div class="rb-progress-fill" id="rb-progress-fill"></div>
+      </div>
+
+      <div class="rb-labels" id="rb-labels">
+        <span id="rb-label-0">--:--</span>
+        <span id="rb-label-1">--:--</span>
+        <span id="rb-label-2">--:--</span>
+        <span id="rb-label-now" class="now">지금</span>
+      </div>
+    </div>
   </div>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>

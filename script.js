@@ -45,14 +45,15 @@ function initMap() {
 
   L.control.zoom({ position: "bottomright" }).addTo(map);
 
-  // 어두운 계기판 톤과 어울리는 다크 베이스맵
+  // 키 없이 쓸 수 있는 다크 베이스맵 (Esri 다크 캔버스)
   L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+    "https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}",
     {
       maxZoom: 18,
+      maxNativeZoom: 16,
       attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> ' +
-        '&copy; <a href="https://carto.com/attributions">CARTO</a>',
+        "Esri, HERE, Garmin, &copy; " +
+        '<a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }
   ).addTo(map);
 }

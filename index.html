@@ -1,93 +1,81 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>기상 레이더</title>
-
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
-  <link rel="stylesheet" href="style.css" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>기상 레이더</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<link rel="stylesheet" href="style.css" />
 </head>
 <body>
-
-  <div id="app">
-    <div id="map"></div>
-
-    <aside id="dock">
-      <div class="brand">
-        <span class="dot"></span>
-        <span class="wordmark">기상 레이더</span>
-      </div>
-
-      <div class="dock-section">
-        <nav id="layer-nav">
-          <button class="layer-item active" data-layer="precip">
-            강수량 <span class="tag">RADAR</span>
-          </button>
-          <button class="layer-item" data-layer="temp">
-            기온 <span class="tag">SOON</span>
-          </button>
-          <button class="layer-item" data-layer="air">
-            대기질 <span class="tag">SOON</span>
-          </button>
-          <button class="layer-item" data-layer="wind">
-            바람 <span class="tag">SOON</span>
-          </button>
-        </nav>
-      </div>
-
-      <div class="dock-section" id="status">
-        <div class="status-title" id="status-title">강수량</div>
-        <div class="status-readout">
-          <span class="live-dot" id="live-dot"></span>
-          <span id="status-readout-text">불러오는 중...</span>
-        </div>
-        <div class="status-time" id="status-time"></div>
-      </div>
-
-      <div class="dock-section" id="legend">
-        <div class="legend-label">강수 강도</div>
-        <div class="legend-bar"></div>
-        <div class="legend-ticks">
-          <span>약함</span>
-          <span>보통</span>
-          <span>강함</span>
-        </div>
-      </div>
-
-      <div id="attribution">
-        지도 OpenStreetMap · CARTO<br>
-        레이더 RainViewer
-      </div>
-    </aside>
-
-    <div id="radar-bar" class="visible">
-      <button id="playBtn" class="rb-play">⏸</button>
-
-      <div class="rb-info">
-        <div class="rb-title">강수 레이더</div>
-        <div class="rb-date" id="rb-date">--</div>
-      </div>
-
-      <div class="rb-range" id="rb-range">
-        <button class="rb-range-btn" data-range="1h">1시간</button>
-        <button class="rb-range-btn active" data-range="all">전체</button>
-      </div>
-
-      <div class="rb-progress" id="rb-progress">
-        <div class="rb-progress-fill" id="rb-progress-fill"></div>
-      </div>
-
-      <div class="rb-labels" id="rb-labels">
-        <span id="rb-label-0">--:--</span>
-        <span id="rb-label-1">--:--</span>
-        <span id="rb-label-2">--:--</span>
-        <span id="rb-label-now" class="now">지금</span>
-      </div>
-    </div>
-  </div>
-
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
-  <script src="script.js"></script>
+<div id="app">
+<div id="map"></div>
+<aside id="dock">
+<div class="brand">
+<span class="dot"></span>
+<span class="wordmark">기상 레이더</span>
+</div>
+<div class="dock-section">
+<nav id="layer-nav">
+<button class="layer-item active" data-layer="precip">
+강수량 <span class="tag">RADAR</span>
+</button>
+<button class="layer-item" data-layer="temp">
+기온 <span class="tag">SOON</span>
+</button>
+<button class="layer-item" data-layer="air">
+대기질 <span class="tag">SOON</span>
+</button>
+<button class="layer-item" data-layer="wind">
+바람 <span class="tag">SOON</span>
+</button>
+</nav>
+</div>
+<div class="dock-section" id="status">
+<div class="status-title" id="status-title">강수량</div>
+<div class="status-readout">
+<span class="live-dot" id="live-dot"></span>
+<span id="status-readout-text">불러오는 중...</span>
+</div>
+<div class="status-time" id="status-time"></div>
+</div>
+<div class="dock-section" id="legend">
+<div class="legend-label">강수 강도</div>
+<div class="legend-bar"></div>
+<div class="legend-ticks">
+<span>약함</span>
+<span>보통</span>
+<span>강함</span>
+</div>
+</div>
+<div id="attribution">
+지도 OpenStreetMap · CARTO<br>
+레이더 RainViewer
+</div>
+</aside>
+<div id="radar-bar" class="visible">
+<button id="playBtn" class="rb-play">⏸</button>
+<div class="rb-info">
+<div class="rb-title">강수 레이더</div>
+<div class="rb-date" id="rb-date">--</div>
+</div>
+<div class="rb-range" id="rb-range">
+<button class="rb-range-btn" data-range="1h">1시간</button>
+<button class="rb-range-btn active" data-range="all">전체</button>
+</div>
+<div class="rb-progress" id="rb-progress">
+<div class="rb-progress-fill" id="rb-progress-fill"></div>
+<div class="rb-now-marker" id="rb-now-marker"></div>
+</div>
+<div class="rb-labels" id="rb-labels">
+<span id="rb-label-0">--:--</span>
+<span id="rb-label-1">--:--</span>
+<span id="rb-label-2">--:--</span>
+<span id="rb-label-now" class="now">지금</span>
+</div>
+</div>
+</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script src="script.js"></script>
 </body>
 </html>

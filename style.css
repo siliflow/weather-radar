@@ -272,7 +272,7 @@ html, body {
   margin-top: 14px;
   cursor: pointer;
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 .rb-progress-fill {
   position: absolute;
@@ -281,6 +281,20 @@ html, body {
   background: var(--text);
   border-radius: 999px;
   transition: width 0.2s linear;
+}
+
+/* "지금" 경계 마커 — 예측(nowcast) 프레임이 시작되는 지점을 표시 */
+.rb-now-marker {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 14px;
+  background: var(--live);
+  border-radius: 1px;
+  transform: translateX(-1px);
+  box-shadow: 0 0 0 2px rgba(74, 211, 149, 0.25);
+  display: none;
+  pointer-events: none;
 }
 
 .rb-labels {
@@ -292,7 +306,7 @@ html, body {
   font-size: 10.5px;
   color: var(--muted-dim);
 }
-.rb-labels .now { color: var(--text); font-weight: 700; }
+.rb-labels .now { color: var(--live); font-weight: 700; }
 
 /* 하단 출처 */
 #attribution {

@@ -170,6 +170,20 @@ async function loadRadarLayer() {
       .getElementById("live-dot")
       .classList.toggle("on", currentLayer === "precip");
 
+    // 지상 레이더는 기지국이 있는 곳(한국/일본 본토 등)만 커버해서
+    // 먼바다(태풍 등)는 안 보임 — 전 지구 커버되는 위성 적외선 구름
+    // 이미지를 레이더 아래 배경으로 깔아준다.
+    const satellite = (data.satellite && data.satellite.infrared) || [];
+    if (satellite.length) {
+      const latestSat = satellite[satellite.length - 1];
+      const satUrl = `${data.host}${latestSat.path}/256/{z}/{x}/{y}/0/0_0.png`;
+      L.tileLayer(satUrl, {
+        opacity: 0.55,
+        maxZoom: 18,
+        zIndex: 50, // 레이더(zIndex 100)보다 아래
+      }).addTo(map);
+    }
+
     recomputeVisibleRange();
     // 가장 최근 "실제 관측"(과거의 마지막 프레임 = 지금)부터 시작.
     // 예측 프레임까지 포함해도 처음엔 "지금" 위치에서 보여준다.

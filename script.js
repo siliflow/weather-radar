@@ -46,15 +46,15 @@ function initMap() {
 
   L.control.zoom({ position: "bottomright" }).addTo(map);
 
-  // 키 없이 쓸 수 있는 일반(라이트) 베이스맵 — CARTO Voyager
+  // 키 없이 쓸 수 있는 일반(라이트) 베이스맵 — 표준 OpenStreetMap 타일
+  // (CARTO Voyager는 API 키가 필요하게 정책이 바뀌어서 제외)
   L.tileLayer(
-    "https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png",
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
     {
-      maxZoom: 18,
-      maxNativeZoom: 20,
-      subdomains: "abcd",
+      maxZoom: 19,
+      subdomains: "abc",
       attribution:
-        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }
   ).addTo(map);
 }

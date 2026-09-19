@@ -13,10 +13,6 @@ let visibleStart = 0; // rangeMode에 따라 재생 범위의 시작 인덱스
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
-const KOREA_BOUNDS = L.latLngBounds(
-  L.latLng(33.0, 124.0),
-  L.latLng(38.9, 132.0)
-);
 
 const LAYER_INFO = {
   precip: { title: "강수량", readout: "레이더 관측 중", live: true },
@@ -38,10 +34,8 @@ document.addEventListener("DOMContentLoaded", () => {
 function initMap() {
   map = L.map("map", {
     zoomControl: false,
-    minZoom: 6,
+    minZoom: 2,
     maxZoom: 18,
-    maxBounds: KOREA_BOUNDS.pad(0.15),
-    maxBoundsViscosity: 1.0,
   }).setView([36.2, 127.8], 7);
 
   L.control.zoom({ position: "bottomright" }).addTo(map);
@@ -210,27 +204,27 @@ function recomputeVisibleRange() {
 }
 
 function updateRangeLabels() {
+  // 라벨 4칸은 과거를 보여주지 않는다 — 항상 "지금"부터 이후(예측)만 보여준다.
+  // (재생 구간 자체는 1시간/전체 버튼이 그대로 과거를 포함할 수 있음 — 진행바용)
+  const nowIndex = pastCount - 1;
   const lastIndex = radarTimestamps.length - 1;
-  const span = lastIndex - visibleStart;
+  const span = lastIndex - nowIndex;
 
-  const idx0 = visibleStart;
-  const idx1 = visibleStart + Math.round(span * (1 / 3));
-  const idx2 = visibleStart + Math.round(span * (2 / 3));
-  const idx3 = lastIndex;
+  const label1 = document.getElementById("rb-label-1");
+  const label2 = document.getElementById("rb-label-2");
+  const label3 = document.getElementById("rb-label-now");
 
-  document.getElementById("rb-label-0").textContent = formatFrameTimeShort(idx0);
-  document.getElementById("rb-label-1").textContent = formatFrameTimeShort(idx1);
-  document.getElementById("rb-label-2").textContent = formatFrameTimeShort(idx2);
-
-  // "지금"은 더 이상 항상 맨 끝(과거 기준 마지막)이 아니라, 실제 관측/예측 경계.
-  // 예측 프레임이 있으면 맨 끝은 미래이므로, 끝 라벨 텍스트를 시간으로 바꾸고
-  // "지금" 위치는 진행바 위의 별도 마커로 표시한다.
-  const nowLabel = document.getElementById("rb-label-now");
-  if (pastCount - 1 >= lastIndex) {
-    // 예측 프레임이 없는 경우: 기존처럼 맨 끝 = 지금
-    nowLabel.textContent = "지금";
+  if (span <= 0) {
+    // 예측 프레임이 아직 안 들어온 경우
+    label1.textContent = "--:--";
+    label2.textContent = "--:--";
+    label3.textContent = "--:--";
   } else {
-    nowLabel.textContent = formatFrameTimeShort(idx3);
+    const idx1 = nowIndex + Math.max(1, Math.round(span * (1 / 3)));
+    const idx2 = nowIndex + Math.max(1, Math.round(span * (2 / 3)));
+    label1.textContent = formatFrameTimeShort(idx1);
+    label2.textContent = formatFrameTimeShort(idx2);
+    label3.textContent = formatFrameTimeShort(lastIndex);
   }
 
   updateNowMarker();

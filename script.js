@@ -1,7 +1,7 @@
 let map;
 let currentLayer = "precip";
 
-let radarLayers = []; // 프레임별 격자 강수값 배열 (ECMWF)
+let radarLayers = [];
 let radarTimestamps = [];
 let pastCount = 0; // radarTimestamps 중 "과거(관측)" 프레임 개수 — 이 인덱스부터는 예측(nowcast)
 let currentFrameIndex = 0;
@@ -13,15 +13,9 @@ let visibleStart = 0; // rangeMode에 따라 재생 범위의 시작 인덱스
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
-// ECMWF 격자 설정 (한국 포함 전지구 모델, Open-Meteo 경유, 키 불필요)
-const GRID_STEP = 1.0; // degrees
-const GRID_LAT_RANGE = [33, 43];
-const GRID_LON_RANGE = [124, 132];
-let gridPoints = [];
-let precipLayerGroup = null;
 
 const LAYER_INFO = {
-  precip: { title: "강수량", readout: "ECMWF 예보 표시 중", live: true },
+  precip: { title: "강수량", readout: "레이더 관측 중", live: true },
   temp: { title: "기온", readout: "준비 중인 레이어입니다", live: false },
   air: { title: "대기질", readout: "준비 중인 레이어입니다", live: false },
   wind: { title: "바람", readout: "준비 중인 레이어입니다", live: false },
@@ -47,6 +41,7 @@ function initMap() {
   L.control.zoom({ position: "bottomright" }).addTo(map);
 
   // 키 없이 쓸 수 있는 일반(라이트) 베이스맵 — 표준 OpenStreetMap 타일
+  // (CARTO Voyager는 API 키가 필요하게 정책이 바뀌어서 제외)
   L.tileLayer(
     "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
     {
@@ -56,8 +51,6 @@ function initMap() {
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }
   ).addTo(map);
-
-  precipLayerGroup = L.layerGroup().addTo(map);
 }
 
 function setupLayerNav() {
@@ -149,53 +142,51 @@ function switchLayer(layer) {
   }
 }
 
-function buildGridPoints() {
-  if (gridPoints.length) return;
-  for (let lat = GRID_LAT_RANGE[0]; lat <= GRID_LAT_RANGE[1]; lat += GRID_STEP) {
-    for (let lon = GRID_LON_RANGE[0]; lon <= GRID_LON_RANGE[1]; lon += GRID_STEP) {
-      gridPoints.push({ lat: +lat.toFixed(2), lon: +lon.toFixed(2) });
-    }
-  }
-}
-
 async function loadRadarLayer() {
   try {
-    buildGridPoints();
-
-    const latStr = gridPoints.map((p) => p.lat).join(",");
-    const lonStr = gridPoints.map((p) => p.lon).join(",");
-
-    // ECMWF IFS 0.25° 모델, Open-Meteo 경유 (키 불필요)
-    const url =
-      `https://api.open-meteo.com/v1/forecast?latitude=${latStr}&longitude=${lonStr}` +
-      `&hourly=precipitation&models=ecmwf_ifs025&forecast_days=2` +
-      `&timeformat=unixtime&timezone=Asia%2FSeoul`;
-
-    const res = await fetch(url);
+    const res = await fetch(
+      "https://api.rainviewer.com/public/weather-maps.json"
+    );
     const data = await res.json();
 
-    if (!Array.isArray(data) || !data[0] || !data[0].hourly) {
-      throw new Error("ECMWF 데이터 없음");
-    }
+    const past = data.radar.past || [];
+    const nowcast = data.radar.nowcast || []; // 예측(미래) 프레임
+    if (past.length === 0) throw new Error("레이더 데이터 없음");
 
-    const times = data[0].hourly.time;
+    radarTimestamps = past.concat(nowcast);
+    pastCount = past.length;
 
-    radarTimestamps = times.map((t) => ({ time: t }));
-    // ECMWF는 전부 예보 데이터라 "과거" 프레임이 없음 —
-    // 다만 기존 UI 로직(진행바 '지금' 마커 등)과 맞추기 위해
-    // 첫 프레임을 "지금"으로 취급한다.
-    pastCount = 1;
-
-    radarLayers = times.map((_, h) =>
-      gridPoints.map((_, i) => data[i]?.hourly?.precipitation?.[h] ?? 0)
-    );
+    radarLayers = radarTimestamps.map((frame) => {
+      const tileUrl = `${data.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`;
+      return L.tileLayer(tileUrl, {
+        opacity: 0,
+        maxZoom: 18,
+        zIndex: 100,
+      }).addTo(map);
+    });
 
     radarLoaded = true;
     document
       .getElementById("live-dot")
       .classList.toggle("on", currentLayer === "precip");
 
+    // 지상 레이더는 기지국이 있는 곳(한국/일본 본토 등)만 커버해서
+    // 먼바다(태풍 등)는 안 보임 — 전 지구 커버되는 위성 적외선 구름
+    // 이미지를 레이더 아래 배경으로 깔아준다.
+    const satellite = (data.satellite && data.satellite.infrared) || [];
+    if (satellite.length) {
+      const latestSat = satellite[satellite.length - 1];
+      const satUrl = `${data.host}${latestSat.path}/256/{z}/{x}/{y}/0/0_0.png`;
+      L.tileLayer(satUrl, {
+        opacity: 0.55,
+        maxZoom: 18,
+        zIndex: 50, // 레이더(zIndex 100)보다 아래
+      }).addTo(map);
+    }
+
     recomputeVisibleRange();
+    // 가장 최근 "실제 관측"(과거의 마지막 프레임 = 지금)부터 시작.
+    // 예측 프레임까지 포함해도 처음엔 "지금" 위치에서 보여준다.
     showFrame(pastCount - 1);
 
     if (currentLayer === "precip") startAnimation();
@@ -227,6 +218,8 @@ function recomputeVisibleRange() {
 }
 
 function updateRangeLabels() {
+  // 라벨 4칸은 과거를 보여주지 않는다 — 항상 "지금"부터 이후(예측)만 보여준다.
+  // (재생 구간 자체는 1시간/전체 버튼이 그대로 과거를 포함할 수 있음 — 진행바용)
   const nowIndex = pastCount - 1;
   const lastIndex = radarTimestamps.length - 1;
   const span = lastIndex - nowIndex;
@@ -236,6 +229,7 @@ function updateRangeLabels() {
   const label3 = document.getElementById("rb-label-now");
 
   if (span <= 0) {
+    // 예측 프레임이 아직 안 들어온 경우
     label1.textContent = "--:--";
     label2.textContent = "--:--";
     label3.textContent = "--:--";
@@ -278,7 +272,9 @@ function formatFrameTimeShort(index) {
 function showFrame(index) {
   if (!radarLayers.length) return;
 
-  drawFrame(radarLayers[index]);
+  radarLayers.forEach((layer, i) => {
+    layer.setOpacity(i === index ? 0.7 : 0);
+  });
 
   currentFrameIndex = index;
   updateProgress();
@@ -287,38 +283,6 @@ function showFrame(index) {
     document.getElementById("status-time").textContent =
       formatFrameTime(index);
   }
-}
-
-// ECMWF 격자 강수값을 사각형 히트맵으로 그린다 (RainViewer 타일 대신)
-function drawFrame(values) {
-  if (!precipLayerGroup) return;
-  precipLayerGroup.clearLayers();
-
-  const half = GRID_STEP / 2;
-  values.forEach((v, i) => {
-    if (v == null || v < 0.1) return; // 강수 거의 없음 → 생략
-    const { lat, lon } = gridPoints[i];
-    const bounds = [
-      [lat - half, lon - half],
-      [lat + half, lon + half],
-    ];
-    L.rectangle(bounds, {
-      stroke: false,
-      fillColor: precipColor(v),
-      fillOpacity: precipOpacity(v),
-    }).addTo(precipLayerGroup);
-  });
-}
-
-function precipColor(v) {
-  if (v < 1) return "#4fa8ff"; // 약함
-  if (v < 4) return "#ffd400"; // 보통
-  if (v < 10) return "#ff8c00"; // 강함
-  return "#e0193c"; // 매우 강함
-}
-
-function precipOpacity(v) {
-  return Math.min(0.75, 0.3 + v / 15);
 }
 
 function updateProgress() {
@@ -340,7 +304,7 @@ function formatFrameTime(index) {
 }
 
 function hideRadarLayers() {
-  if (precipLayerGroup) precipLayerGroup.clearLayers();
+  radarLayers.forEach((layer) => layer.setOpacity(0));
 }
 
 function startAnimation() {

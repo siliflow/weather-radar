@@ -153,8 +153,10 @@ async function loadRadarLayer() {
     const nowcast = data.radar.nowcast || []; // 예측(미래) 프레임
     if (past.length === 0) throw new Error("레이더 데이터 없음");
 
-    radarTimestamps = past.concat(nowcast);
-    pastCount = past.length;
+    // 과거(지나간) 프레임은 보여주지 않는다 — "지금" 프레임 하나 + 이후 예측만 사용
+    const nowFrame = past[past.length - 1];
+    radarTimestamps = [nowFrame, ...nowcast];
+    pastCount = 1;
 
     radarLayers = radarTimestamps.map((frame) => {
       const tileUrl = `${data.host}${frame.path}/256/{z}/{x}/{y}/2/1_1.png`;

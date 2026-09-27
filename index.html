@@ -18,7 +18,7 @@
 <div class="dock-section">
 <nav id="layer-nav">
 <button class="layer-item active" data-layer="precip">
-강수량 <span class="tag">RADAR</span>
+강수량 <span class="tag">ECMWF</span>
 </button>
 <button class="layer-item" data-layer="temp">
 기온 <span class="tag">SOON</span>
@@ -50,13 +50,13 @@
 </div>
 <div id="attribution">
 지도 OpenStreetMap<br>
-레이더 RainViewer
+예보 모델 ECMWF (via Open-Meteo)
 </div>
 </aside>
 <div id="radar-bar" class="visible">
 <button id="playBtn" class="rb-play">⏸</button>
 <div class="rb-info">
-<div class="rb-title">강수 레이더</div>
+<div class="rb-title">강수 예보</div>
 <div class="rb-date" id="rb-date">--</div>
 </div>
 <div class="rb-range" id="rb-range">
@@ -65,13 +65,12 @@
 </div>
 <div class="rb-progress" id="rb-progress">
 <div class="rb-progress-fill" id="rb-progress-fill"></div>
-<div class="rb-now-marker" id="rb-now-marker"></div>
 </div>
 <div class="rb-labels" id="rb-labels">
-<span id="rb-label-0" class="now">지금</span>
+<span id="rb-label-0">--:--</span>
 <span id="rb-label-1">--:--</span>
 <span id="rb-label-2">--:--</span>
-<span id="rb-label-now">--:--</span>
+<span id="rb-label-now" class="now">지금</span>
 </div>
 </div>
 </div>
